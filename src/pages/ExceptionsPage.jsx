@@ -1,185 +1,348 @@
-import { Link, useParams } from 'react-router';
-import IntegrationNote from '../components/IntegrationNote.jsx';
-import PageHeader from '../components/PageHeader.jsx';
-import { useLanguage } from '../i18n.jsx';
-
-const columns = ['Case ID', 'Product ID', 'Exception type', 'Status', 'Suggested quantity', 'Run'];
-
+import { useCallback, useEffect, useRef, useState } from "react";
+import { Link, useParams, useSearchParams } from "react-router";
+import PageHeader from "../components/PageHeader.jsx";
+import { Feedback, Badge, Metric } from "../components/WorkflowUI.jsx";
+import { useLanguage } from "../i18n.jsx";
+import { useResource } from "../useResource.js";
+import { api, number, casePath, runPath, queuePath } from "../workflow.js";
 export default function ExceptionsPage() {
   const { caseId } = useParams();
-  const { t } = useLanguage();
-
-  if (caseId) {
-    return <ExceptionDetail caseId={caseId} />;
-  }
-
+  return caseId ? <ExceptionDetail key={caseId} caseId={caseId} /> : <Queue />;
+}
+function Queue() {
+  const { t } = useLanguage(),
+    [params, setParams] = useSearchParams();
+  const runId = params.get("run_id") || "",
+    status = params.get("status") || "";
+  const state = useResource(
+    useCallback(
+      () => api.getExceptions({ run_id: runId, status }),
+      [runId, status],
+    ),
+  );
   return (
     <>
       <PageHeader
-        eyebrow={t('Planner review')}
-        title={t('Exceptions')}
-        description={t("Review products that need a planner's attention.")}
-        actions={<span className="queue-chip"><span className="queue-chip__dot" />{t('Review queue')}</span>}
+        eyebrow={t("Planner review")}
+        title={t("Exceptions")}
+        description={t(
+          "Open a case to understand its forecast and record a review decision.",
+        )}
       />
-
-      <section className="panel exceptions-panel" aria-labelledby="exceptions-table-title">
+      <section className="panel exceptions-panel">
         <div className="panel-heading">
-          <div>
-            <div className="panel-kicker">{t('Human-in-the-loop')}</div>
-            <h2 id="exceptions-table-title">{t('Exception queue')}</h2>
-            <p>{t('Open a case to understand its forecast and record a review decision.')}</p>
+          <h2>{t("Exception queue")}</h2>
+          {runId && (
+            <Link className="text-link" to={runPath(runId)}>
+              {t("Analysis run")}
+            </Link>
+          )}
+        </div>
+        <div className="table-toolbar">
+          <label className="field-group">
+            {t("Status")}
+            <select
+              className="field-value"
+              value={status}
+              onChange={(e) => {
+                const next = new URLSearchParams(params);
+                if (e.target.value) next.set("status", e.target.value);
+                else next.delete("status");
+                setParams(next);
+              }}
+            >
+              <option value="">{t("All cases")}</option>
+              {[
+                "pending_review",
+                "approved",
+                "modified",
+                "rejected",
+                "resolved",
+              ].map((s) => (
+                <option value={s} key={s}>
+                  {t(s)}
+                </option>
+              ))}
+            </select>
+          </label>
+          <button className="secondary-button" onClick={state.reload}>
+            {t("Refresh")}
+          </button>
+          {runId && (
+            <Link className="text-link" to="/exceptions">
+              {t("All cases")}
+            </Link>
+          )}
+        </div>
+        <Feedback {...state} />
+        {state.data && (
+          <div className="table-scroll">
+            <table className="data-table">
+              <thead>
+                <tr>
+                  {[
+                    "Product ID",
+                    "Exception type",
+                    "Status",
+                    "Suggested quantity",
+                    "Run",
+                    "Decision",
+                  ].map((s) => (
+                    <th key={s}>{t(s)}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {state.data.map((c) => (
+                  <tr key={c.id}>
+                    <td>{c.result.product_id}</td>
+                    <td>{t(c.exception_type)}</td>
+                    <td>
+                      <Badge status={c.status} />
+                    </td>
+                    <td>{number(c.result.recommended_order_quantity)}</td>
+                    <td>
+                      <Link
+                        className="text-link"
+                        to={runPath(c.analysis_run_id)}
+                      >
+                        {t(c.parent_run_status)}
+                      </Link>
+                    </td>
+                    <td>
+                      <Link className="text-link" to={casePath(c.id)}>
+                        {t("Inspect")}
+                      </Link>
+                    </td>
+                  </tr>
+                ))}
+                {!state.data.length && (
+                  <tr>
+                    <td colSpan="6">{t("No matching records.")}</td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
           </div>
-          <span className="endpoint-label">GET /exceptions</span>
-        </div>
-
-        <div className="table-toolbar table-toolbar--filters">
-          <div className="filter-tabs" aria-label={t('Exception status filter')}>
-            <button className="filter-tab is-selected" type="button" disabled>{t('Pending review')}</button>
-            <button className="filter-tab" type="button" disabled>{t('Reviewed')}</button>
-            <button className="filter-tab" type="button" disabled>{t('All cases')}</button>
-          </div>
-          <span className="filter-note">{t('Filters available after API integration')}</span>
-        </div>
-
-        <div className="table-scroll">
-          <table className="data-table exceptions-table">
-            <thead>
-              <tr>{columns.map((column) => <th key={column}>{t(column)}</th>)}</tr>
-            </thead>
-            <tbody>
-              <tr>
-                <td colSpan={columns.length} className="table-empty-cell">
-                  <div className="empty-state empty-state--wide">
-                    <div className="empty-state__icon empty-state__icon--exceptions"><AlertIcon /></div>
-                    <h3>{t('No exception records loaded')}</h3>
-                    <p>{t('Cases will appear here when a completed analysis needs human review.')}</p>
-                    <Link className="text-link" to="/analysis">{t('Go to Analysis')} <ArrowRightIcon /></Link>
-                  </div>
-                </td>
-              </tr>
-            </tbody>
-          </table>
-        </div>
+        )}
       </section>
-
-      <div className="review-guidance">
-        <div className="review-guidance__icon"><ReviewIcon /></div>
-        <div>
-          <strong>{t('Review is advisory')}</strong>
-          <p>{t("Approve or modify a recommendation records a planner's decision. It does not place an order or change inventory.")}</p>
-        </div>
-      </div>
-
-      <IntegrationNote>
-        {t('Exception cases will be opened by their case ID or linked run ID. The interface will not guess a case from a product name or list position.')}
-      </IntegrationNote>
     </>
   );
 }
-
 function ExceptionDetail({ caseId }) {
-  const { t } = useLanguage();
+  const { t } = useLanguage(),
+    state = useResource(useCallback(() => api.getException(caseId), [caseId]));
+  const c = state.data,
+    x = c?.result;
   return (
     <>
       <PageHeader
-        eyebrow={t('Planner review')}
-        title={t('Exception details')}
-        description={t('Review the supporting forecast before recording a decision.')}
-        actions={<Link className="secondary-button" to="/exceptions">{t('Back to queue')}</Link>}
+        eyebrow={t("Planner review")}
+        title={t("Exception details")}
+        description={t(
+          "Review the supporting forecast before recording a decision.",
+        )}
+        actions={
+          <Link
+            className="secondary-button"
+            to={c ? queuePath(c.analysis_run_id) : "/exceptions"}
+          >
+            {t("Back to queue")}
+          </Link>
+        }
       />
-
-      <div className="detail-layout">
-        <section className="panel case-detail-panel" aria-labelledby="case-summary-title">
-          <div className="panel-heading">
-            <div>
-              <div className="panel-kicker">{t('Exception case')}</div>
-              <h2 id="case-summary-title">{t('Case')} {caseId}</h2>
-              <p>{t('Case information will be loaded from the exception API.')}</p>
-            </div>
-            <span className="status-badge status-badge--muted">{t('Awaiting API')}</span>
+      <Feedback {...state} />
+      {c && (
+        <>
+          <div className="summary-grid">
+            <Metric label={t("Product ID")} value={x.product_id} />
+            <Metric
+              label={t("On hand")}
+              value={number(x.inventory_at_prediction)}
+            />
+            <Metric
+              label={t("Suggested quantity")}
+              value={number(x.recommended_order_quantity)}
+            />
           </div>
-
-          <div className="detail-metrics">
-            <DetailMetric label={t('Product ID')} value="—" />
-            <DetailMetric label={t('Exception type')} value="—" />
-            <DetailMetric label={t('Forecast horizon')} value="—" />
-            <DetailMetric label={t('Suggested quantity')} value="—" />
+          <div className="detail-layout">
+            <section className="panel case-detail-panel">
+              <div className="panel-heading">
+                <h2>{t("Exception case")}</h2>
+                <Badge status={c.status} />
+              </div>
+              <div className="workflow-body">
+                <p className="workflow-id">{caseId}</p>
+                <p>
+                  {t("Forecast horizon")}: {number(x.horizon_days)} {t("days")}
+                </p>
+                <p>{x.explanation}</p>
+                <p>
+                  {t("Model version")}: {x.model_version}
+                </p>
+                <p>
+                  {t("Policy")}: {x.policy_version}
+                </p>
+                <p className="workflow-id">
+                  {t("Input reference")}: {x.input_reference}
+                </p>
+                <Link className="text-link" to={runPath(c.analysis_run_id)}>
+                  {t("Analysis run")} · {t(c.parent_run_status)}
+                </Link>
+              </div>
+            </section>
+            <section className="panel review-panel">
+              <div className="panel-heading">
+                <h2>{t("Record review")}</h2>
+              </div>
+              {c.status !== "pending_review" ? (
+                <div className="workflow-body" role="status">
+                  <Badge status={c.status} />
+                  <p>
+                    {t("Reviewed quantity")}:{" "}
+                    {number(c.reviewer_order_quantity)}
+                  </p>
+                  <p>
+                    {t("Reviewer")}: {c.reviewer_label}
+                  </p>
+                  <p>
+                    {t("Reason")}: {c.override_reason || "—"}
+                  </p>
+                  <p>{c.reviewed_at}</p>
+                </div>
+              ) : c.parent_run_status !== "completed" || c.partial ? (
+                <p className="workflow-message workflow-error">
+                  {t(
+                    "Partial results. Review is disabled until a complete successful run.",
+                  )}
+                </p>
+              ) : (
+                <ReviewForm c={c} onSaved={state.reload} />
+              )}
+            </section>
           </div>
-
-          <div className="explanation-placeholder">
-            <span className="explanation-placeholder__label">{t('Why this case was raised')}</span>
-            <p>{t('The model explanation and inventory snapshot will appear here when case details are connected.')}</p>
-          </div>
-        </section>
-
-        <section className="panel review-panel" aria-labelledby="review-form-title">
-          <div className="panel-heading panel-heading--compact">
-            <div>
-              <div className="panel-kicker">{t('Decision')}</div>
-              <h2 id="review-form-title">{t('Record review')}</h2>
-            </div>
-          </div>
-          <div className="review-options">
-            <button type="button" className="review-option" disabled>
-              <span className="review-option__mark review-option__mark--approve">✓</span>
-              <span><strong>{t('Approve')}</strong><small>{t('Accept the suggested quantity')}</small></span>
-            </button>
-            <button type="button" className="review-option" disabled>
-              <span className="review-option__mark review-option__mark--modify">↗</span>
-              <span><strong>{t('Modify')}</strong><small>{t('Enter a different quantity and reason')}</small></span>
-            </button>
-          </div>
-          <label className="field-group field-group--disabled">
-            <span>{t('Reviewed quantity')}</span>
-            <input className="field-value" type="number" min="0" placeholder={t('Available after API integration')} disabled />
-          </label>
-          <label className="field-group field-group--disabled">
-            <span>{t('Reason')}</span>
-            <textarea className="field-value field-value--textarea" rows="3" placeholder={t('A reason will be required when modifying a recommendation')} disabled />
-          </label>
-          <button type="button" className="primary-button review-submit" disabled>{t('Save review')}</button>
-          <p className="button-help">{t('The form will refresh from the saved case after submission.')}</p>
-        </section>
-      </div>
-
-      <IntegrationNote>
-        {t("The page distinguishes the system's suggestion from the quantity entered by a planner. Review actions will be enabled after the review API is connected.")}
-      </IntegrationNote>
+          <p className="workflow-message">
+            {t(
+              "Approve or modify a recommendation records a planner's decision. It does not place an order or change inventory.",
+            )}
+          </p>
+        </>
+      )}
     </>
   );
 }
-
-function DetailMetric({ label, value }) {
+function ReviewForm({ c, onSaved }) {
+  const { t } = useLanguage();
+  const [decision, setDecision] = useState(
+      c.exception_type === "anomaly" ? "resolve" : "approve",
+    ),
+    [quantity, setQuantity] = useState(
+      String(c.result.recommended_order_quantity),
+    ),
+    [reviewer, setReviewer] = useState(""),
+    [reason, setReason] = useState(""),
+    [busy, setBusy] = useState(false),
+    [error, setError] = useState(null);
+  const lock = useRef(false),
+    active = useRef(true);
+  useEffect(() => {
+    active.current = true;
+    return () => {
+      active.current = false;
+    };
+  }, []);
+  async function save(e) {
+    e.preventDefault();
+    if (lock.current) return;
+    if (!reviewer.trim() || (decision !== "approve" && !reason.trim())) {
+      setError(Error(t("Reviewer and a reason are required.")));
+      return;
+    }
+    lock.current = true;
+    setBusy(true);
+    setError(null);
+    try {
+      await api.submitReview(c.id, {
+        decision,
+        reviewer_label: reviewer.trim(),
+        reviewer_order_quantity: Number(quantity),
+        override_reason: reason.trim(),
+      });
+      if (active.current) onSaved();
+    } catch (e) {
+      if (active.current) setError(e);
+    } finally {
+      lock.current = false;
+      if (active.current) setBusy(false);
+    }
+  }
   return (
-    <div className="detail-metric">
-      <span>{label}</span>
-      <strong>{value}</strong>
-    </div>
-  );
-}
-
-function AlertIcon() {
-  return (
-    <svg viewBox="0 0 32 32" fill="none" aria-hidden="true">
-      <path d="M16 4.5 28 26H4z" />
-      <path d="M16 11v6m0 4.5h.01" />
-    </svg>
-  );
-}
-
-function ArrowRightIcon() {
-  return (
-    <svg viewBox="0 0 20 20" fill="none" aria-hidden="true">
-      <path d="M3.5 10h12m-5-5 5 5-5 5" />
-    </svg>
-  );
-}
-
-function ReviewIcon() {
-  return (
-    <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
-      <path d="M5 4.5h14v15H5z" />
-      <path d="m8.5 12 2.2 2.2 5-5M8.5 8.5h2" />
-    </svg>
+    <form className="workflow-body workflow-form" onSubmit={save}>
+      <fieldset disabled={busy}>
+        <label className="field-group">
+          {t("Decision")}
+          <select
+            className="field-value"
+            value={decision}
+            onChange={(e) => setDecision(e.target.value)}
+          >
+            {(c.exception_type === "anomaly"
+              ? ["resolve"]
+              : ["approve", "modify", "reject"]
+            ).map((s) => (
+              <option value={s} key={s}>
+                {t(s)}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label className="field-group">
+          {t("Reviewer")}
+          <input
+            className="field-value"
+            required
+            maxLength="100"
+            value={reviewer}
+            onChange={(e) => setReviewer(e.target.value)}
+          />
+        </label>
+        {decision === "modify" && (
+          <label className="field-group">
+            {t("Reviewed quantity")}
+            <input
+              className="field-value"
+              type="number"
+              required
+              min="0"
+              step="1"
+              value={quantity}
+              onChange={(e) => setQuantity(e.target.value)}
+            />
+          </label>
+        )}
+        <label className="field-group">
+          {t("Reason")}
+          <textarea
+            className="field-value"
+            required={decision !== "approve"}
+            maxLength="1000"
+            value={reason}
+            onChange={(e) => setReason(e.target.value)}
+          />
+        </label>
+        <button
+          className="primary-button"
+          disabled={busy || error?.status === 409}
+        >
+          {t(busy ? "Saving…" : "Save review")}
+        </button>
+      </fieldset>
+      <Feedback error={error} />
+      {error && (
+        <button type="button" className="secondary-button" onClick={onSaved}>
+          {t("Load latest case before retrying")}
+        </button>
+      )}
+    </form>
   );
 }

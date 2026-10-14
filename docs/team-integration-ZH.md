@@ -61,4 +61,4 @@ CORS 允许实际页面 origin，例如 `http://127.0.0.1:5173`（与 localhost 
 
 ## FIX_dashboard 仓库说明
 
-本分支把 Demo 独立放在 frontend/；现有 src/ React 页面保持不变。两套页面尚未合并，部署工作流仍发布 React 页面。后续可把公共 API 适配器迁移到 React 页面中；不要将此分支误认为已经完成 React 联调。本文提到的 Python starter 位于原 injuredkitten/MAIE6000C1 仓库，不随本次上传复制。
+React 合并分支已让 src/pages 页面共用 frontend/ 的 API 适配器，部署时发布整合后的 React 页面。frontend/ 独立 HTML 留作参考；React 配置位于 public/runtime-config.js。新的文件归属与验收见 react-integration.md。本文提到的 Python starter 位于原 injuredkitten/MAIE6000C1 仓库，不随本次上传复制。

@@ -11,7 +11,7 @@ npm ci
 npm run dev
 ```
 
-Open the local URL printed by Vite. The current pages are a UI scaffold: they do not call the project API, database, worker, or AI service yet.
+Open the local URL printed by Vite. The React pages now share the mock API: inventory → analysis → status/results → exceptions → review. Refresh restores records in the same browser. Fixtures are synthetic; no real worker, database or trained model is connected.
 
 ## Routes
 
@@ -28,7 +28,7 @@ Pushing to the `main` branch builds the Vite app and deploys it to GitHub Pages 
 
 ## Standalone workflow demo (Zhou)
 
-The `frontend/` directory contains the completed dependency-free mock workflow demo. It is separate from the React/Vite scaffold in `src/`; the React routes do not yet use this adapter. This branch does not change the existing GitHub Pages deployment.
+The React app in `src/` now imports the common API adapters from `frontend/`. The standalone HTML demo remains a reference; use the React app for the merged team demo. The existing deployment workflow builds the integrated React app when this branch is merged to main.
 
 Run from the repository root:
 
@@ -43,3 +43,12 @@ Open http://127.0.0.1:5173. The demo includes analysis creation, polling, foreca
 - [Team integration and ownership](docs/team-integration-ZH.md)
 
 Validate the mock and HTTP adapter with `node --test frontend/tests/*.test.js`.
+
+## Integrated React demo
+
+- `/#/analysis/:runId` shows persisted status and all forecast results.
+- `/#/exceptions?run_id=...&status=pending_review` filters the queue.
+- `/#/exceptions/:caseId` loads the exact case and persists approve/modify/reject/resolve decisions.
+- Configure the React deployment in `public/runtime-config.js`; the built file is `dist/runtime-config.js`. The standalone reference uses `frontend/runtime-config.js`. Never add secrets to either file.
+- The backend API and model are still pending; `live` requires the documented retail endpoints.
+- See [integrated acceptance guide](docs/react-integration.md).

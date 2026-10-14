@@ -1,3 +1,5 @@
+import {useEffect} from 'react';
+import {config} from '../workflow.js';
 import { NavLink, Outlet, useLocation } from 'react-router';
 import { useLanguage } from '../i18n.jsx';
 
@@ -57,6 +59,7 @@ function getPageTitle(pathname, t) {
 
 export default function AppLayout() {
   const { pathname } = useLocation();
+  useEffect(() => { window.scrollTo(0, 0); }, [pathname]);
   const { language, t, toggleLanguage } = useLanguage();
   const pageTitle = getPageTitle(pathname, t);
 
@@ -95,7 +98,7 @@ export default function AppLayout() {
             </span>
             <div>
               <span className="connection-card__label">{t('API connection')}</span>
-              <strong>{t('Not connected')}</strong>
+              <strong>{t(config.mode==='mock'?'Mock demo':'Live API')}</strong>
             </div>
           </div>
           <div className="sidebar-caption">{t('Forecasting & Inventory Exceptions')}</div>
@@ -112,7 +115,7 @@ export default function AppLayout() {
           <div className="topbar-actions">
             <span className="environment-badge">
               <span className="environment-badge__dot" />
-              {t('Frontend scaffold')}
+              {t(config.mode==='mock'?'Mock demo':'Live API')}
             </span>
             <button
               className="language-toggle"
@@ -129,6 +132,7 @@ export default function AppLayout() {
         </header>
 
         <main className="main-content">
+          <div className="workflow-message workflow-notice">{t(config.mode==='mock'?'Synthetic fixtures only. No trained model or server database. Saved in this browser.':'Live API mode. Results come from the configured backend.')}</div>
           <Outlet />
           <footer className="page-footer">
             <span>{t('Project F.I.X. · Demo workspace')}</span>
