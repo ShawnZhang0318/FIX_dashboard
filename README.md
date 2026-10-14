@@ -1,6 +1,8 @@
 # Project F.I.X. Dashboard
 
-The React + Vite dashboard prototype for Project F.I.X. It includes English and Simplified Chinese interfaces, with pages for Inventory, Analysis, and Exceptions, plus placeholders for run and exception details.
+The React + Vite dashboard for Project F.I.X. It includes English and Simplified Chinese interfaces and an integrated mock workflow for Inventory, Analysis, forecast results, Exceptions and human review.
+
+**中文文档：[整合版改动说明](docs/changes-zh.md) · [运行与验收](docs/react-integration.md) · [团队接入说明](docs/team-integration-ZH.md)**
 
 ## Run locally
 
