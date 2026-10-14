@@ -2043,3 +2043,6 @@ textarea.field-value:disabled {
     font-size: 13px;
   }
 }
+.workflow-body{padding:24px;overflow-wrap:anywhere}.workflow-body details{padding:14px 0;border-bottom:1px solid var(--line)}.workflow-body summary{cursor:pointer}.workflow-message{padding:16px 20px;margin:16px 0;background:var(--teal-soft);border-radius:12px;line-height:1.6}.workflow-error{color:#8c2834;background:#fff0f0}.workflow-id{overflow-wrap:anywhere;font-size:13px}.workflow-form fieldset{border:0;padding:0;margin:0;display:grid;gap:16px;min-width:0}.workflow-form textarea{min-height:90px}.workflow-status-failed,.workflow-status-rejected{color:#8c2834;background:#fff0f0}.workflow-status-completed,.workflow-status-approved,.workflow-status-modified,.workflow-status-resolved{color:var(--teal-dark);background:var(--teal-soft)}.workflow-status-queued,.workflow-status-processing,.workflow-status-pending_review{color:#805b14;background:#fff5dc}select{font:inherit;max-width:100%}.table-toolbar{flex-wrap:wrap;gap:12px}.data-table td{overflow-wrap:anywhere}.panel+.panel{margin-top:20px}.workflow-notice{margin-top:0}.workflow-body .secondary-button{margin-top:12px}
+
+.analysis-grid > .panel + .panel,.detail-layout > .panel + .panel{margin-top:0}.analysis-grid + .summary-grid{margin-top:20px}

@@ -1,4 +1,5 @@
 import { createContext, useContext, useEffect, useMemo, useState } from 'react';
+import {workflowTranslations} from './workflow-translations.js';
 
 const LanguageContext = createContext(null);
 
@@ -154,7 +155,7 @@ export function LanguageProvider({ children }) {
     language,
     setLanguage,
     toggleLanguage: () => setLanguage((current) => current === 'en' ? 'zh-CN' : 'en'),
-    t: (text) => language === 'zh-CN' ? translations['zh-CN'][text] ?? text : text,
+    t: (text) => language === 'zh-CN' ? workflowTranslations[text] ?? translations['zh-CN'][text] ?? text : text,
   }), [language]);
 
   return <LanguageContext.Provider value={value}>{children}</LanguageContext.Provider>;

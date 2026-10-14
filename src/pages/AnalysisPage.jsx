@@ -1,143 +1,328 @@
-import { Link, useParams } from 'react-router';
-import IntegrationNote from '../components/IntegrationNote.jsx';
-import PageHeader from '../components/PageHeader.jsx';
-import { useLanguage } from '../i18n.jsx';
-
-const steps = [
-  { number: '01', title: 'Create analysis run', detail: 'POST /analysis-runs', state: 'API step' },
-  { number: '02', title: 'Build forecast', detail: 'Worker + private AI service', state: 'Background step' },
-  { number: '03', title: 'Review exceptions', detail: 'Open a linked case for human review', state: 'Planner step' },
-];
-
+import { useEffect, useRef, useState } from "react";
+import { Link, useNavigate, useParams } from "react-router";
+import PageHeader from "../components/PageHeader.jsx";
+import { Feedback, Badge, Metric } from "../components/WorkflowUI.jsx";
+import { useLanguage } from "../i18n.jsx";
+import {
+  api,
+  config,
+  number,
+  casePath,
+  runPath,
+  queuePath,
+} from "../workflow.js";
 export default function AnalysisPage() {
   const { runId } = useParams();
-  const { t } = useLanguage();
-
+  return <AnalysisWorkspace key={runId || "new"} runId={runId} />;
+}
+function AnalysisWorkspace({ runId }) {
+  const { t } = useLanguage(),
+    navigate = useNavigate();
+  const [date, setDate] = useState("2022-06-30"),
+    [scenario, setScenario] = useState("success");
+  const [run, setRun] = useState(null),
+    [results, setResults] = useState(null),
+    [error, setError] = useState(null),
+    [createError, setCreateError] = useState(null),
+    [busy, setBusy] = useState(false),
+    [revision, setRevision] = useState(0);
+  const active = useRef(true),
+    submitting = useRef(false);
+  useEffect(() => {
+    active.current = true;
+    return () => {
+      active.current = false;
+    };
+  }, []);
+  useEffect(() => {
+    if (!runId) return;
+    let cancelled = false,
+      timer;
+    setError(null);
+    setResults(null);
+    async function poll() {
+      try {
+        const r = await api.getAnalysisRun(runId);
+        if (cancelled) return;
+        if (!["queued", "processing", "completed", "failed"].includes(r.status))
+          throw Error("Unsupported run status: " + r.status);
+        setRun(r);
+        setDate(r.as_of_date);
+        if (r.scenario) setScenario(r.scenario);
+        if (["queued", "processing"].includes(r.status)) {
+          timer = setTimeout(poll, config.pollMs);
+          return;
+        }
+        const data = await api.getAnalysisResults(runId);
+        if (cancelled) return;
+        if (!Array.isArray(data.results))
+          throw Error("Invalid results response");
+        setResults({
+          ...data,
+          partial: !!(data.partial || r.partial || r.status === "failed"),
+        });
+      } catch (e) {
+        if (!cancelled) setError(e);
+      }
+    }
+    poll();
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+    };
+  }, [runId, revision]);
+  const running =
+    !!runId && (!run || ["queued", "processing"].includes(run.status));
+  async function create(e) {
+    e.preventDefault();
+    if (submitting.current) return;
+    submitting.current = true;
+    setBusy(true);
+    setCreateError(null);
+    try {
+      const data = await api.createAnalysisRun({
+        store_id: "S001",
+        run_type: "daily",
+        as_of_date: date,
+        scenario,
+      });
+      if (!data?.analysis_run?.id) throw Error("Missing analysis_run.id");
+      if (active.current) navigate(runPath(data.analysis_run.id));
+    } catch (e) {
+      if (active.current) setCreateError(e);
+    } finally {
+      submitting.current = false;
+      if (active.current) setBusy(false);
+    }
+  }
   return (
     <>
       <PageHeader
-        eyebrow={t('Daily demand planning')}
-        title={t(runId ? 'Analysis run' : 'Analysis')}
-        description={t(runId ? 'Follow the status and results for this analysis request.' : 'Start a daily analysis for the selected store and date.')}
-        actions={<span className="mode-chip"><span className="mode-chip__dot" />{t('Daily analysis')}</span>}
+        eyebrow={t("Daily demand planning")}
+        title={t(runId ? "Analysis run" : "Analysis")}
+        description={t(
+          "Follow the status and results for this analysis request.",
+        )}
       />
-
       <div className="analysis-grid">
-        <section className="panel request-panel" aria-labelledby="request-title">
+        <section className="panel request-panel">
           <div className="panel-heading">
-            <div>
-              <div className="panel-kicker">{t('New request')}</div>
-              <h2 id="request-title">{t('Run daily analysis')}</h2>
-              <p>{t('Choose the store and analysis date to prepare a run.')}</p>
+            <h2>{t("Run daily analysis")}</h2>
+          </div>
+          <form onSubmit={create}>
+            <div className="request-fields">
+              <label className="field-group">
+                {t("Store")}
+                <input className="field-value" disabled value="S001" />
+              </label>
+              <label className="field-group">
+                {t("Analysis date")}
+                <input
+                  className="field-value"
+                  type="date"
+                  required
+                  value={date}
+                  disabled={running || busy}
+                  min={config.mode === "mock" ? "2022-06-30" : undefined}
+                  max={config.mode === "mock" ? "2022-06-30" : undefined}
+                  onChange={(e) => setDate(e.target.value)}
+                />
+              </label>
+              {config.mode === "mock" && (
+                <label className="field-group">
+                  {t("Demo scenario")}
+                  <select
+                    className="field-value"
+                    value={scenario}
+                    disabled={running || busy}
+                    onChange={(e) => setScenario(e.target.value)}
+                  >
+                    {["success", "failure", "empty"].map((s) => (
+                      <option key={s} value={s}>
+                        {t(s)}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              )}
             </div>
-            <span className="endpoint-label">POST /analysis-runs</span>
-          </div>
-
-          <div className="request-fields">
-            <label className="field-group">
-              <span>{t('Store')}</span>
-              <div className="field-value field-value--fixed">
-                <span className="field-value__leading"><StoreIcon /></span>
-                S001
-                <span className="field-value__tag">{t('Demo store')}</span>
-              </div>
-            </label>
-            <label className="field-group" htmlFor="analysis-date">
-              <span>{t('Analysis date')}</span>
-              <input id="analysis-date" className="field-value" type="date" disabled />
-              <small>{t('Enabled when the demo data range is confirmed.')}</small>
-            </label>
-          </div>
-
-          <div className="request-footer">
-            <div className="request-footer__copy">
-              <span className="status-dot status-dot--muted" />
-              <span>{t('API not connected')}</span>
+            <div className="request-footer">
+              <button className="primary-button" disabled={running || busy}>
+                {t(
+                  busy
+                    ? "Creating…"
+                    : running
+                      ? "Analysis in progress"
+                      : "Run Daily Analysis",
+                )}
+              </button>
             </div>
-            <button className="primary-button" type="button" disabled>
-              <PlayIcon />
-              {t('Run Daily Analysis')}
-            </button>
-          </div>
-          <p className="button-help">{t('The request button will be enabled when run creation is integrated.')}</p>
+          </form>
+          <Feedback error={createError} />
         </section>
-
-        <section className="panel run-status-panel" aria-labelledby="run-status-title">
-          <div className="panel-heading panel-heading--compact">
-            <div>
-              <div className="panel-kicker">{t('Current request')}</div>
-              <h2 id="run-status-title">{t('Run status')}</h2>
-            </div>
-            <span className="status-badge status-badge--muted">{t('Awaiting API')}</span>
+        <section className="panel run-status-panel">
+          <div className="panel-heading">
+            <h2>{t("Run status")}</h2>
+            {run && <Badge status={run.status} />}
           </div>
-          {runId ? (
-            <div className="run-reference">
-              <span>{t('Run ID')}</span>
-              <strong>{runId}</strong>
-              <p>{t('Status and forecast results will be retrieved from the API.')}</p>
-              <Link className="text-link" to="/analysis">{t('Back to new analysis')}</Link>
-            </div>
-          ) : (
-            <div className="status-empty">
-              <div className="status-empty__symbol"><ClockIcon /></div>
-              <h3>{t('No run selected')}</h3>
-              <p>{t('After a request is created, its queued, processing, completed, or failed status will appear here.')}</p>
-            </div>
-          )}
+          <div className="workflow-body">
+            {runId ? (
+              <>
+                <p className="workflow-id">
+                  {t("Run ID")}: {runId}
+                </p>
+                {run && (
+                  <>
+                    <p>
+                      {run.as_of_date} · {run.store_id}
+                    </p>
+                    <p>
+                      {t("Products processed")}: {number(run.processed_count)} /{" "}
+                      {number(run.expected_count)}
+                    </p>
+                    {run.error && (
+                      <p role="alert">
+                        {typeof run.error === "string"
+                          ? run.error
+                          : JSON.stringify(run.error)}
+                      </p>
+                    )}
+                  </>
+                )}
+              </>
+            ) : (
+              <p>{t("No run selected")}</p>
+            )}
+            <Feedback
+              loading={!!runId && !run && !error}
+              error={error}
+              reload={() => setRevision((x) => x + 1)}
+            />
+            {runId && (
+              <Link className="text-link" to="/analysis">
+                {t("Back to new analysis")}
+              </Link>
+            )}
+          </div>
         </section>
       </div>
-
-      <section className="panel workflow-panel" aria-labelledby="workflow-title">
-        <div className="panel-heading panel-heading--compact">
-          <div>
-            <div className="panel-kicker">{t('What happens next')}</div>
-            <h2 id="workflow-title">{t('Daily analysis workflow')}</h2>
-          </div>
-          <span className="workflow-caption">{t('One request · persisted results · human review')}</span>
-        </div>
-        <ol className="workflow-steps">
-          {steps.map((step) => (
-            <li className="workflow-step" key={step.number}>
-              <span className="workflow-step__number">{step.number}</span>
-              <div>
-                <h3>{t(step.title)}</h3>
-                <p>{t(step.detail)}</p>
-              </div>
-              <span className="workflow-step__state">{t(step.state)}</span>
-            </li>
-          ))}
-        </ol>
-      </section>
-
-      <IntegrationNote>
-        {t('This page will display the persisted output for the current run. Dataset benchmark values will not be shown as model predictions.')}
-      </IntegrationNote>
+      {results && <Results data={results} runId={runId} />}
     </>
   );
 }
-
-function StoreIcon() {
+function Results({ data, runId }) {
+  const { t } = useLanguage(),
+    rows = data.results;
+  const total = rows.every((x) => Number.isFinite(x.recommended_order_quantity))
+    ? rows.reduce((s, x) => s + x.recommended_order_quantity, 0)
+    : null;
   return (
-    <svg viewBox="0 0 20 20" fill="none" aria-hidden="true">
-      <path d="M3 8.5h14v8H3zM2.5 6l1.2-3h12.6l1.2 3v2.5H2.5z" />
-      <path d="M7 16.5v-4h3v4M6 8.5v-2m4 2v-2m4 2v-2" />
-    </svg>
-  );
-}
-
-function PlayIcon() {
-  return (
-    <svg viewBox="0 0 20 20" fill="none" aria-hidden="true">
-      <path d="m7 4.5 8 5.5-8 5.5z" />
-    </svg>
-  );
-}
-
-function ClockIcon() {
-  return (
-    <svg viewBox="0 0 32 32" fill="none" aria-hidden="true">
-      <circle cx="16" cy="16" r="11" />
-      <path d="M16 9v7l4.5 2.5" />
-    </svg>
+    <>
+      {data.partial && (
+        <p className="workflow-message workflow-error" role="alert">
+          {t(
+            "Partial results. Review is disabled until a complete successful run.",
+          )}
+        </p>
+      )}
+      <div className="summary-grid">
+        <Metric label={t("Products processed")} value={rows.length} />
+        <Metric label={t("Suggested quantity")} value={number(total)} />
+        <Metric
+          label={t("Exceptions")}
+          value={rows.filter((x) => x.case_id).length}
+        />
+      </div>
+      <section className="panel inventory-panel">
+        <div className="panel-heading">
+          <h2>{t("Forecast results")}</h2>
+          <Link className="secondary-button" to={queuePath(runId)}>
+            {t("Review exceptions")}
+          </Link>
+        </div>
+        <div className="table-scroll">
+          <table className="data-table">
+            <thead>
+              <tr>
+                {[
+                  "Product ID",
+                  "On hand",
+                  "Forecast horizon",
+                  "Demand forecast",
+                  "Safety stock",
+                  "Suggested quantity",
+                  "Decision",
+                ].map((x) => (
+                  <th key={x}>{t(x)}</th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {rows.map((x) => (
+                <tr key={x.id}>
+                  <td>{x.product_id}</td>
+                  <td>{number(x.inventory_at_prediction)}</td>
+                  <td>
+                    {number(x.horizon_days)} {t("days")}
+                  </td>
+                  <td>
+                    {x.forecast_mode === "point_buffer" ? (
+                      <>
+                        {t("Point")}: {number(x.predicted_demand_point)}
+                        <br />
+                        {t("Buffer")}: {number(x.uncertainty_buffer)}
+                      </>
+                    ) : (
+                      <>
+                        P50: {number(x.predicted_demand_p50)}
+                        <br />
+                        P90: {number(x.predicted_demand_p90)}
+                      </>
+                    )}
+                  </td>
+                  <td>{number(x.safety_stock)}</td>
+                  <td>{number(x.recommended_order_quantity)}</td>
+                  <td>
+                    {x.case_id ? (
+                      <Link className="text-link" to={casePath(x.case_id)}>
+                        {t("Inspect")}
+                      </Link>
+                    ) : (
+                      t("Normal")
+                    )}
+                  </td>
+                </tr>
+              ))}
+              {!rows.length && (
+                <tr>
+                  <td colSpan="7">
+                    {t("No eligible products. The run completed successfully.")}
+                  </td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+      </section>
+      {!!rows.length && (
+        <section className="panel workflow-body">
+          <h2>{t("Result traceability")}</h2>
+          {rows.map((x) => (
+            <details key={x.id}>
+              <summary>
+                {x.product_id} · {x.model_version}
+              </summary>
+              <p>{x.explanation}</p>
+              <p>
+                {t("Policy")}: {x.policy_version}
+              </p>
+              <p className="workflow-id">
+                {t("Input reference")}: {x.input_reference}
+              </p>
+            </details>
+          ))}
+        </section>
+      )}
+    </>
   );
 }
