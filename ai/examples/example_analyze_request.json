@@ -1,0 +1,18 @@
+{
+  "store_id": "S001",
+  "product_id": "P0001",
+  "as_of_date": "2023-11-15",
+  "lead_time_days": 3,
+  "feature_schema_version": "features-v1",
+  "input_reference": "S001/P0001/2023-11-15",
+  "features": {
+    "units_sold_today": 55.0,
+    "lag_1": 56.0,
+    "lag_7": 324.0,
+    "lag_14": 15.0,
+    "lag_28": 108.0,
+    "rolling_mean_7": 129.714285714,
+    "rolling_mean_28": 147.678571429,
+    "rolling_std_28": 120.635678517
+  }
+}

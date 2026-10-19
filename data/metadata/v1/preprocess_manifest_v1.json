@@ -1,0 +1,46 @@
+{
+  "dataset_version": "v1",
+  "store_id": "S001",
+  "source_file": "retail_store_inventory_data.csv",
+  "source_sha256": "c7b6019887d85e6bb311a76da72560463e6bf269bfadbe4b326fbff3b1000468",
+  "product_catalog": "product_catalog_v1.csv",
+  "feature_schema_version": "features-v1",
+  "record_count_clean": 14620,
+  "record_count_feature_and_target_complete": 13840,
+  "product_count": 20,
+  "raw_date_min": "2022-01-01",
+  "raw_date_max": "2024-01-01",
+  "lead_time_by_category": {
+    "Groceries": 3,
+    "Toys": 7,
+    "Clothing": 10,
+    "Electronics": 14,
+    "Furniture": 21
+  },
+  "splits": {
+    "train": {
+      "last_origin": "2023-04-09",
+      "last_label": "2023-04-30",
+      "rows": 8720
+    },
+    "validation": {
+      "first_origin": "2023-05-01",
+      "last_origin": "2023-08-10",
+      "last_label": "2023-08-31",
+      "rows": 2040
+    },
+    "test": {
+      "first_origin": "2023-09-01",
+      "last_origin": "2023-12-11",
+      "last_label": "2024-01-01",
+      "rows": 2040
+    }
+  },
+  "excluded_source_columns": [
+    "Inventory Level",
+    "Demand Forecast",
+    "Region",
+    "Category (replaced by synthetic fixed category)"
+  ],
+  "inventory_exception_manager": "Not implemented in P1/P2; retain raw sales/orders for P5 inventory replay and anomaly rules"
+}

@@ -1,0 +1,12 @@
+{
+  "store_id": "S001",
+  "product_id": "P0001",
+  "as_of_date": "2023-11-15",
+  "horizon_days": 3,
+  "forecast_mode": "quantile",
+  "predicted_demand_p50": 424.03519375145015,
+  "predicted_demand_p90": 648.0340855078196,
+  "model_version": "s001-global-q-v1",
+  "feature_schema_version": "features-v1",
+  "input_reference": "S001/P0001/2023-11-15"
+}

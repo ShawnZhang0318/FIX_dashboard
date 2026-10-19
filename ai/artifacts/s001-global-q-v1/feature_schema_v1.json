@@ -1,0 +1,37 @@
+{
+  "version": "features-v1",
+  "prediction_timing": "end_of_day_after_sales_ingestion",
+  "forecast_target": "target_cumulative_units_sold",
+  "model_feature_columns": [
+    "product_id",
+    "lead_time_days",
+    "day_of_week",
+    "month",
+    "units_sold_today",
+    "lag_1",
+    "lag_7",
+    "lag_14",
+    "lag_28",
+    "rolling_mean_7",
+    "rolling_mean_28",
+    "rolling_std_28"
+  ],
+  "history_days_required": 28,
+  "rolling_window_rule": "shift(1) then rolling(window) -- excludes current day",
+  "excluded_v1_inputs": [
+    "inventory_level",
+    "demand_forecast",
+    "units_ordered",
+    "source_category",
+    "region"
+  ],
+  "future_inventory_anomaly_inputs": [
+    "product_id",
+    "date",
+    "units_sold",
+    "units_ordered",
+    "lead_time_days",
+    "rolling_mean_28",
+    "rolling_std_28"
+  ]
+}
