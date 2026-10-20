@@ -1,5 +1,7 @@
 # Project F.I.X. Dashboard
 
+AI v1 source assets remain in [ai/README.md](ai/README.md), with the original [AI handoff](docs/ai-handoff-plan.md) and [model data handoff](docs/model-data-handoff.md). The current local integration is documented below.
+
 The React + Vite dashboard for Project F.I.X. It includes English and Simplified Chinese interfaces for Inventory, Analysis, forecast results, Exceptions, human review and backend execution logs. Local integration now connects the real `s001-global-q-v1` model through a public API, an independent SQLite database and a separate worker.
 
 **2026-10-21 main 更新：[本次更新说明（中文）](docs/changes-zh.md) · [真实模型启动与团队交接](docs/local-integration-zh.md)。PostgreSQL 仍待正式后端接入。GitHub Pages 展示 mock；真实预测需启动本地服务。**

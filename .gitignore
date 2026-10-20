@@ -7,3 +7,6 @@ __pycache__/
 .env
 .env.*
 !.env.example
+*.py[cod]
+.venv/
+.tmp-ai-test-deps/
