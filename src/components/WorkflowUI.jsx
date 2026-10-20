@@ -1,4 +1,5 @@
 import { useLanguage } from "../i18n.jsx";
+import { Link } from 'react-router';
 export function Feedback({ loading, error, reload }) {
   const { t } = useLanguage();
   if (loading)
@@ -12,6 +13,8 @@ export function Feedback({ loading, error, reload }) {
       <div className="workflow-message workflow-error" role="alert">
         <p>{t("Request failed. Check the connection or record ID.")}</p>
         <p>{error.message}</p>
+        {error.writeUncertain && <p>{t('Write outcome unknown. Check server state before retrying.')}</p>}
+        {error.requestId && <p className="workflow-id"><Link to={`/logs?${new URLSearchParams({source:'browser',request_id: error.requestId})}`}>{t('View request log')}</Link> · {error.requestId}</p>}
         {reload && (
           <button className="secondary-button" onClick={reload}>
             {t("Retry")}

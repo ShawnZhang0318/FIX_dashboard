@@ -2,11 +2,19 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {createLiveApi} from '../live-api.js';
 import {createHttpClient} from '../http-client.js';
+import {createMockApi} from '../mock-api.js';
 
 test('live adapter preserves prefix, encodes identities and strips mock-only inputs',async()=>{
+ let saved;const mock=createMockApi({storage:{getItem:()=>saved,setItem:(k,v)=>saved=v},now:()=>0,uuid:()=> 'run'});
+ await mock.createAnalysisRun({store_id:'S001',run_type:'daily',as_of_date:'2022-06-30'});
+ const completed=createMockApi({storage:{getItem:()=>saved},now:()=>6000});
+ const [sample]=await completed.getExceptions();
+ const fixture=(id,review=false)=>({...sample,id,result:{...sample.result,case_id:id},...(review?{status:'rejected',reviewer_decision:'reject',reviewer_label:'Zhang',override_reason:'Checked',reviewed_at:new Date().toISOString(),reviewer_order_quantity:0}:{})});
  const calls=[];
  const api=createLiveApi({apiBaseUrl:'http://example.test/api/',fetchImpl:async(url,options)=>{
-  calls.push({url,...options});return new Response(JSON.stringify(url.includes('/inventory?')||url.includes('/exceptions?')?[]:{}));
+  calls.push({url,...options});
+  const data=url.endsWith('/analysis-runs')?{analysis_run:{id:'run',status:'queued'},job:{id:'job-run',status:'pending'}}:url.includes('/inventory?')||url.includes('/exceptions?')?[]:url.endsWith('/review')?fixture('c1',true):fixture('run/one:case');
+  return new Response(JSON.stringify(data),{status:url.endsWith('/analysis-runs')?202:200});
  }});
  await api.createAnalysisRun({store_id:'S001',run_type:'daily',as_of_date:'2022-06-30',scenario:'failure',extra:'not public'});
  assert.equal(calls[0].url,'http://example.test/api/analysis-runs');
@@ -22,7 +30,7 @@ test('live adapter preserves prefix, encodes identities and strips mock-only inp
 test('HTTP conflict and validation details survive; failed writes never auto-retry',async()=>{
  let count=0;
  const api=createLiveApi({fetchImpl:async()=>{count++;return new Response(JSON.stringify({detail:'Already reviewed'}),{status:409});}});
- await assert.rejects(api.submitReview('c',{}),e=>e.status===409&&e.message==='Already reviewed');assert.equal(count,1);
+ await assert.rejects(api.submitReview('c',{decision:'approve',reviewer_label:'Zhou'}),e=>e.status===409&&e.message==='Already reviewed');assert.equal(count,1);
  const request=createHttpClient({fetchImpl:async()=>new Response(JSON.stringify({detail:[{loc:['body','date'],msg:'invalid'}]}),{status:422})});
  await assert.rejects(request('/test'),e=>e.status===422&&e.message.includes('invalid'));
 });

@@ -1,0 +1,14 @@
+{
+  "method": "nonnegative_one_sided_additive_residual_quantile",
+  "target_coverage": 0.9,
+  "calibration_split": "validation",
+  "cutoff_date": "2023-08-31",
+  "correction_by_lead_time_days": {
+    "3": 0.0,
+    "7": 105.08252613801233,
+    "10": 123.10876050048569,
+    "14": 201.6470187562918,
+    "21": 534.7043991729024
+  },
+  "note": "Overlapping windows mean IID conformal guarantees do not apply."
+}

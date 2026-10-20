@@ -4,6 +4,7 @@ import { useLanguage } from './i18n.jsx';
 import AnalysisPage from './pages/AnalysisPage.jsx';
 import ExceptionsPage from './pages/ExceptionsPage.jsx';
 import InventoryPage from './pages/InventoryPage.jsx';
+import LogsPage from './pages/LogsPage.jsx';
 
 function NotFoundPage() {
   const { t } = useLanguage();
@@ -26,6 +27,7 @@ export default function App() {
         <Route path="analysis/:runId" element={<AnalysisPage />} />
         <Route path="exceptions" element={<ExceptionsPage />} />
         <Route path="exceptions/:caseId" element={<ExceptionsPage />} />
+        <Route path="logs" element={<LogsPage />} />
         <Route path="*" element={<NotFoundPage />} />
       </Route>
     </Routes>

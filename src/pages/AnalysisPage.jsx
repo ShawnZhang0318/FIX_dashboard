@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router";
 import PageHeader from "../components/PageHeader.jsx";
 import { Feedback, Badge, Metric } from "../components/WorkflowUI.jsx";
+import { validateRunResults } from "../../frontend/contracts.js";
 import { useLanguage } from "../i18n.jsx";
 import {
   api,
@@ -18,7 +19,7 @@ export default function AnalysisPage() {
 function AnalysisWorkspace({ runId }) {
   const { t } = useLanguage(),
     navigate = useNavigate();
-  const [date, setDate] = useState("2022-06-30"),
+  const [date, setDate] = useState(config.mode === "mock" ? "2022-06-30" : config.defaultAnalysisDate || ""),
     [scenario, setScenario] = useState("success");
   const [run, setRun] = useState(null),
     [results, setResults] = useState(null),
@@ -38,11 +39,12 @@ function AnalysisWorkspace({ runId }) {
     if (!runId) return;
     let cancelled = false,
       timer;
+    const controller = new AbortController();
     setError(null);
     setResults(null);
     async function poll() {
       try {
-        const r = await api.getAnalysisRun(runId);
+        const r = await api.getAnalysisRun(runId, {signal: controller.signal});
         if (cancelled) return;
         if (!["queued", "processing", "completed", "failed"].includes(r.status))
           throw Error("Unsupported run status: " + r.status);
@@ -53,14 +55,11 @@ function AnalysisWorkspace({ runId }) {
           timer = setTimeout(poll, config.pollMs);
           return;
         }
-        const data = await api.getAnalysisResults(runId);
+        const data = await api.getAnalysisResults(runId, {signal: controller.signal});
         if (cancelled) return;
         if (!Array.isArray(data.results))
           throw Error("Invalid results response");
-        setResults({
-          ...data,
-          partial: !!(data.partial || r.partial || r.status === "failed"),
-        });
+        setResults(validateRunResults(r, data));
       } catch (e) {
         if (!cancelled) setError(e);
       }
@@ -69,13 +68,14 @@ function AnalysisWorkspace({ runId }) {
     return () => {
       cancelled = true;
       clearTimeout(timer);
+      controller.abort();
     };
   }, [runId, revision]);
   const running =
     !!runId && (!run || ["queued", "processing"].includes(run.status));
   async function create(e) {
     e.preventDefault();
-    if (submitting.current) return;
+    if (submitting.current || createError?.writeUncertain) return;
     submitting.current = true;
     setBusy(true);
     setCreateError(null);
@@ -123,7 +123,7 @@ function AnalysisWorkspace({ runId }) {
                   required
                   value={date}
                   disabled={running || busy}
-                  min={config.mode === "mock" ? "2022-06-30" : undefined}
+                  min={config.mode === "mock" ? "2022-06-30" : config.minimumAnalysisDate}
                   max={config.mode === "mock" ? "2022-06-30" : undefined}
                   onChange={(e) => setDate(e.target.value)}
                 />
@@ -147,7 +147,7 @@ function AnalysisWorkspace({ runId }) {
               )}
             </div>
             <div className="request-footer">
-              <button className="primary-button" disabled={running || busy}>
+              <button className="primary-button" disabled={running || busy || createError?.writeUncertain}>
                 {t(
                   busy
                     ? "Creating…"
@@ -176,6 +176,7 @@ function AnalysisWorkspace({ runId }) {
                     <p>
                       {run.as_of_date} · {run.store_id}
                     </p>
+                    <p className="workflow-id">{t("Job ID")}: {run.job.id} · {t(run.job.status)}</p>
                     <p>
                       {t("Products processed")}: {number(run.processed_count)} /{" "}
                       {number(run.expected_count)}
@@ -199,6 +200,9 @@ function AnalysisWorkspace({ runId }) {
               reload={() => setRevision((x) => x + 1)}
             />
             {runId && (
+              <Link className="text-link" to={`/logs?${new URLSearchParams({run_id: runId, ...(run?.job?.id ? {job_id: run.job.id} : {})})}`}>{t('View task logs')}</Link>
+            )}
+            {runId && (
               <Link className="text-link" to="/analysis">
                 {t("Back to new analysis")}
               </Link>
@@ -218,7 +222,7 @@ function Results({ data, runId }) {
     : null;
   return (
     <>
-      {data.partial && (
+      {(data.partial || data.status === "failed") && (
         <p className="workflow-message workflow-error" role="alert">
           {t(
             "Partial results. Review is disabled until a complete successful run.",
@@ -296,7 +300,7 @@ function Results({ data, runId }) {
               {!rows.length && (
                 <tr>
                   <td colSpan="7">
-                    {t("No eligible products. The run completed successfully.")}
+                    {t(data.partial || data.status === 'failed' ? 'No usable results were returned. This run did not complete successfully.' : 'No eligible products. The run completed successfully.')}
                   </td>
                 </tr>
               )}
@@ -313,6 +317,8 @@ function Results({ data, runId }) {
                 {x.product_id} · {x.model_version}
               </summary>
               <p>{x.explanation}</p>
+              <p className="workflow-id">{t("Source snapshot")}: {x.snapshot_id}</p>
+              <p>{t("Processed at")}: {x.processed_at} · {number(x.duration_ms)} ms</p>
               <p>
                 {t("Policy")}: {x.policy_version}
               </p>

@@ -16,7 +16,7 @@ function Queue() {
     status = params.get("status") || "";
   const state = useResource(
     useCallback(
-      () => api.getExceptions({ run_id: runId, status }),
+      options => api.getExceptions({ store_id: "S001", run_id: runId, status }, options),
       [runId, status],
     ),
   );
@@ -131,7 +131,7 @@ function Queue() {
 }
 function ExceptionDetail({ caseId }) {
   const { t } = useLanguage(),
-    state = useResource(useCallback(() => api.getException(caseId), [caseId]));
+    state = useResource(useCallback(options => api.getException(caseId, options), [caseId]));
   const c = state.data,
     x = c?.result;
   return (
@@ -186,6 +186,7 @@ function ExceptionDetail({ caseId }) {
                 <p className="workflow-id">
                   {t("Input reference")}: {x.input_reference}
                 </p>
+                <p className="workflow-id">{t("Source snapshot")}: {x.snapshot_id}</p>
                 <Link className="text-link" to={runPath(c.analysis_run_id)}>
                   {t("Analysis run")} · {t(c.parent_run_status)}
                 </Link>
@@ -245,6 +246,7 @@ function ReviewForm({ c, onSaved }) {
     [error, setError] = useState(null);
   const lock = useRef(false),
     active = useRef(true);
+  const reasonRequired = decision !== "approve" || c.exception_type === "reorder_and_anomaly";
   useEffect(() => {
     active.current = true;
     return () => {
@@ -254,7 +256,7 @@ function ReviewForm({ c, onSaved }) {
   async function save(e) {
     e.preventDefault();
     if (lock.current) return;
-    if (!reviewer.trim() || (decision !== "approve" && !reason.trim())) {
+    if (!reviewer.trim() || (reasonRequired && !reason.trim())) {
       setError(Error(t("Reviewer and a reason are required.")));
       return;
     }
@@ -265,7 +267,7 @@ function ReviewForm({ c, onSaved }) {
       await api.submitReview(c.id, {
         decision,
         reviewer_label: reviewer.trim(),
-        reviewer_order_quantity: Number(quantity),
+        ...(decision === "modify" ? {reviewer_order_quantity: Number(quantity)} : {}),
         override_reason: reason.trim(),
       });
       if (active.current) onSaved();
@@ -324,15 +326,16 @@ function ReviewForm({ c, onSaved }) {
           {t("Reason")}
           <textarea
             className="field-value"
-            required={decision !== "approve"}
+            required={reasonRequired}
             maxLength="1000"
             value={reason}
             onChange={(e) => setReason(e.target.value)}
           />
         </label>
+        {c.exception_type === "reorder_and_anomaly" && <p>{t("The review note must address both the anomaly and replenishment.")}</p>}
         <button
           className="primary-button"
-          disabled={busy || error?.status === 409}
+          disabled={busy || error?.status === 409 || error?.writeUncertain}
         >
           {t(busy ? "Saving…" : "Save review")}
         </button>

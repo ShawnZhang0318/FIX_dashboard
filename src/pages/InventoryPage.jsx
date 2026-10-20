@@ -5,10 +5,11 @@ import { Feedback, Metric } from "../components/WorkflowUI.jsx";
 import { useLanguage } from "../i18n.jsx";
 import { useResource } from "../useResource.js";
 import { api, number } from "../workflow.js";
+import SnapshotTransferPanel from "../components/SnapshotTransferPanel.jsx";
 export default function InventoryPage() {
   const { t } = useLanguage(),
     [search, setSearch] = useState("");
-  const state = useResource(useCallback(() => api.getInventory(), []));
+  const state = useResource(useCallback(options => api.getInventory({store_id: "S001"}, options), []));
   const rows = state.data || [],
     filtered = rows.filter((x) =>
       (x.product_id + " " + (x.name || ""))
@@ -106,6 +107,7 @@ export default function InventoryPage() {
           </section>
         </>
       )}
+      <SnapshotTransferPanel onImported={state.reload} />
     </>
   );
 }

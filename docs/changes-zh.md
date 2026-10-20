@@ -1,5 +1,53 @@
 # Project F.I.X. 整合版改动说明（中文）
 
+## 2026-10-21：main 更新版
+
+本次把已经完成本地验证的 Dashboard、后端执行日志、W04 接口传输和真实模型联调代码整合到 `main`。保留队友已合并的 AI v1 模型及原有 React 页面。以下是当前版本；后半部分的 2026-10-14 记录仅用于说明最初的模拟版整合。
+
+### 当前版本能做什么
+
+| 更新部分 | 已实现的内容 |
+| --- | --- |
+| 后端日志页面 | 默认读取 API、worker、AI 实际执行日志；支持 Run/Job/Case/Request/Trace、级别、服务、时间和关键词筛选，查看完整消息、上下文、错误堆栈，分页和完整 NDJSON 导出。浏览器诊断单独保留。 |
+| 公共 API 传输 | 统一请求、超时、取消、错误和关联编号；校验请求白名单与响应字段、门店、任务归属、状态、数量、模型版本和快照来源，写入失败不自动重复提交。 |
+| 每日快照 | 新增上传与查询接口及页面入口，保留原始观测字段和源文件哈希；100 行以内整批提交，重复记录回滚，历史回填不倒退当前库存。 |
+| 异步分析 | 创建 queued Run 与 pending Job 后立即返回 202；独立 worker 领取任务、调用模型并保存结果；页面查询真实状态与处理数量。 |
+| 真实模型 | 接入 `ai-model-v1` 的 `s001-global-q-v1` LightGBM 模型，保留制品哈希校验；使用连续 29 天历史生成特征，不使用未来数据或 CSV 的 Demand Forecast 作为模型输入。 |
+| 独立本地数据库 | SQLite 保存观测、库存、冻结输入、任务、预测、异常、审核和日志，服务重启后仍可读取。未实现正式 PostgreSQL 部署。 |
+| 人工审核 | 按补货、异常、组合案例校验动作与原因，数据库保护重复审核；失败任务的部分结果可查看但不可审核。审核只保存决定，不改库存、不自动采购。 |
+| 模式与日期 | 本机页面使用本地真实 API；github.io 保留明确标记的 mock 模式。真实模型默认分析日为 `2023-11-15`，拒绝早于 `2023-09-01` 的历史回测。 |
+| Windows 与启动 | 固定模型及数据文件字节，避免 Git 换行转换破坏哈希；新增统一启动、停止和真实流程验收脚本。 |
+
+### 新增与主要修改的文件
+
+| 位置 | 用途 |
+| --- | --- |
+| `local_backend/` | 本地公共 API、SQLite 存储、独立 worker、真实 AI 日志包装、日志查询/导出、CSV 导入客户端和后端测试 |
+| `integration/worker_ai.py` | worker 到私有模型的请求封装、身份/版本校验和关联日志编号 |
+| `frontend/requests.js`、`contracts.js`、`http-client.js`、`live-api.js` | 请求准备、传输、响应与结果一致性校验 |
+| `frontend/backend-logs.js`、`activity-log.js`、`api-gateway.js` | 后端日志合同、浏览器诊断和公共调用入口 |
+| `src/pages/BackendLogsPage.jsx`、`LogsPage.jsx` | 服务端执行日志与浏览器诊断页面 |
+| `src/components/SnapshotTransferPanel.jsx` | 每日快照提交和按商品/日期查询 |
+| `src/pages/AnalysisPage.jsx`、`ExceptionsPage.jsx`、`InventoryPage.jsx` | 任务及 Job、结果追溯、组合异常审核、快照传输接入 |
+| `src/main.jsx`、`bootstrap.jsx`、`public/runtime-config.js` | 先加载配置再创建 API，区分本机 live 与静态托管 mock |
+| `scripts/start-local-demo.ps1`、`stop-local-demo.ps1` | 本机服务启动与停止，保留数据库和应用日志 |
+| `scripts/verify-local-demo.mjs` | 使用实际前端 API 封装验证真实预测、审核、日志分页和完整导出 |
+| `.gitattributes`、`.gitignore` | 保持受哈希校验文件的原始字节，排除本地数据库、日志、环境与构建产物 |
+
+### 验证与当前边界
+
+2026-10-20 已验证：38 项 Python 检查、32 项前端测试、生产构建；导入 S001 的 14,620 条原始观测，真实分析完成 20/20 商品；审核回读与重启持久化成功，库存未改变；175 条 Run/Job 关联日志分页及导出数量一致。
+
+P0001 / 2023-11-15 的实际模型输出为 P50 `424.03519375145015`、P90 `648.0340855078196`，截止日库存 82，建议数量 567。模型版本、策略版本、输入引用和快照编号均保留。
+
+本版采用模型已有的冻结模拟交货期；异常检测由 worker 的显式规则完成，AI v1 本身尚无异常模型。正式 PostgreSQL/Alembic、服务器部署、登录权限、失效领取恢复和日志保留策略仍需团队后端完成。
+
+**GitHub Pages 只托管网页。上传 main 会按现有工作流发布网页，但不会替用户启动 Python、SQLite 或模型服务。** 本机真实 Demo 使用 `http://127.0.0.1:5174/FIX_dashboard/#/analysis`。本地数据库、已保存审核、执行日志和虚拟环境不上传到仓库，其他同学须按说明启动并导入数据。
+
+详细文档：[本地启动与团队交接](local-integration-zh.md) · [W04 数据流核对](data-flow-audit-zh.md) · [公共接口合同](frontend-api-contract.md) · [后端日志合同](backend-logs-contract.md)。
+
+## 历史记录：2026-10-14 模拟版整合
+
 更新日期：2026-10-14  
 上传分支：`feature/merged-demo-zh`  
 对比基准：张艺桐的 React 初始版本，提交 `5a598a0`。

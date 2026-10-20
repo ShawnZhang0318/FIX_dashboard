@@ -1,5 +1,9 @@
 node_modules/
 dist/
+.venv-model/
+__pycache__/
+.pytest_cache/
+.local-integration/
 .env
 .env.*
 !.env.example

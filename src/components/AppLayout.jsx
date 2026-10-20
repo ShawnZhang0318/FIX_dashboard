@@ -7,12 +7,14 @@ const navigation = [
   { label: 'Inventory', to: '/inventory', icon: 'inventory' },
   { label: 'Analysis', to: '/analysis', icon: 'analysis' },
   { label: 'Exceptions', to: '/exceptions', icon: 'exceptions' },
+  { label: 'Logs', to: '/logs', icon: 'logs' },
 ];
 
 const pageNames = [
   { match: '/inventory', title: 'Inventory' },
   { match: '/analysis', title: 'Analysis' },
   { match: '/exceptions', title: 'Exceptions' },
+  { match: '/logs', title: 'Logs' },
 ];
 
 function NavIcon({ name }) {
@@ -26,6 +28,7 @@ function NavIcon({ name }) {
     'aria-hidden': true,
   };
 
+  if (name === 'logs') return <svg {...common}><rect x="5" y="3" width="14" height="18" rx="2" /><path d="M9 8h6M9 12h6M9 16h4" /></svg>;
   if (name === 'inventory') {
     return (
       <svg {...common}>
@@ -58,7 +61,8 @@ function getPageTitle(pathname, t) {
 }
 
 export default function AppLayout() {
-  const { pathname } = useLocation();
+  const { pathname, search } = useLocation();
+  const serverLogs = pathname.startsWith('/logs') && new URLSearchParams(search).get('source') !== 'browser';
   useEffect(() => { window.scrollTo(0, 0); }, [pathname]);
   const { language, t, toggleLanguage } = useLanguage();
   const pageTitle = getPageTitle(pathname, t);
@@ -98,7 +102,7 @@ export default function AppLayout() {
             </span>
             <div>
               <span className="connection-card__label">{t('API connection')}</span>
-              <strong>{t(config.mode==='mock'?'Mock demo':'Live API')}</strong>
+              <strong>{t(config.localIntegration ? 'Local model integration' : config.mode==='mock'?'Mock demo':'Live API')}</strong>
             </div>
           </div>
           <div className="sidebar-caption">{t('Forecasting & Inventory Exceptions')}</div>
@@ -115,7 +119,7 @@ export default function AppLayout() {
           <div className="topbar-actions">
             <span className="environment-badge">
               <span className="environment-badge__dot" />
-              {t(config.mode==='mock'?'Mock demo':'Live API')}
+              {t(serverLogs ? 'Backend logs' : config.localIntegration ? 'Real model · Local SQLite' : config.mode==='mock'?'Mock demo':'Live API')}
             </span>
             <button
               className="language-toggle"
@@ -132,7 +136,7 @@ export default function AppLayout() {
         </header>
 
         <main className="main-content">
-          <div className="workflow-message workflow-notice">{t(config.mode==='mock'?'Synthetic fixtures only. No trained model or server database. Saved in this browser.':'Live API mode. Results come from the configured backend.')}</div>
+          {!pathname.startsWith('/logs') && <div className="workflow-message workflow-notice">{t(config.localIntegration ? 'Local integration uses the trained model and a separate SQLite database. PostgreSQL is not connected. Historical analysis uses stock at the selected cutoff.' : config.mode==='mock'?'Synthetic fixtures only. No trained model or server database. Saved in this browser.':'Live API mode. Results come from the configured backend.')}</div>}
           <Outlet />
           <footer className="page-footer">
             <span>{t('Project F.I.X. · Demo workspace')}</span>

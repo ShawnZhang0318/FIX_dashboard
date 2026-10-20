@@ -1,6 +1,8 @@
 # 本周 Demo：团队接入与交接
 
-本版可以独立运行模拟流程；真实数据库、worker、模型仍未接入。以下是建议接入合同，需团队共同确认，不代表其他同学已实现或已接受新增分工。原有 `/cases`、`/jobs` 属于通用 starter，不能直接当成库存分析接口。
+**2026-10-20 更新：** 下面保留早期独立 HTML Demo 的交接记录。当前 React 主项目以 [W04 数据流核对与接口传输](data-flow-audit-zh.md) 和 [前端接口合同](frontend-api-contract.md) 为准，已补齐快照端点、门店过滤、Run/Job 和组合异常。React 配置在 `public/runtime-config.js`，页面在 `src/pages/`；不要按早期记录恢复普通 script 标签或只确认旧的七个端点。
+
+2026-10-21 main 版已接入真实模型、独立 worker、公共 API 和本地 SQLite；正式 PostgreSQL 与服务器部署仍待团队接入。具体运行和替换边界见[本地联调说明](local-integration-zh.md)。下文保留团队分工和接口建议，不代表其他同学已接受新增分工。原有 `/cases`、`/jobs` 属于通用 starter，不能直接当成库存分析接口。
 
 ## 谁改哪些文件
 

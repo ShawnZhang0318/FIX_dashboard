@@ -1,0 +1,12 @@
+# Model versions recorded in the original manifest (Python 3.13.16).
+lightgbm==4.6.0
+scikit-learn==1.6.1
+pandas==2.2.3
+numpy==2.1.3
+# Proposed runtime pins: these versions were not recorded by the notebook.
+joblib==1.5.2
+scipy==1.15.3
+# Service versions reused from maie6000c-starter-CadenJ.
+fastapi==0.116.1
+pydantic==2.11.7
+uvicorn==0.35.0

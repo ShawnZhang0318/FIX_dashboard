@@ -10,9 +10,10 @@ export function useResource(loader) {
   const [revision, setRevision] = useState(0);
   useEffect(() => {
     let active = true;
+    const controller = new AbortController();
     setState({ loading: true, data: null, error: null });
     Promise.resolve()
-      .then(loader)
+      .then(() => loader({signal: controller.signal}))
       .then(
         (data) => {
           if (active) setState({ loading: false, data, error: null });
@@ -23,6 +24,7 @@ export function useResource(loader) {
       );
     return () => {
       active = false;
+      controller.abort();
     };
   }, [loader, revision]);
   return { ...state, reload: () => setRevision((x) => x + 1) };

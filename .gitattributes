@@ -1,0 +1,7 @@
+# These delivered files are covered by SHA-256 manifests. Preserve exact bytes
+# on Windows too; core.autocrlf must not invalidate model/data checksums.
+ai/artifacts/** -text
+ai/examples/** -text
+ai/reports/** -text
+data/** -text
+docs/w04-reference/** -text

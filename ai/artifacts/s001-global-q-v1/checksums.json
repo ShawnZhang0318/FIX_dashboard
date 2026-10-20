@@ -1,0 +1,8 @@
+{
+  "model_p50.joblib": "142dc11dcec8dc7ac9714fbb605a841bab9d584b8398edb2aedcf002b12a9390",
+  "model_p90.joblib": "7c182d41d2e577e84881a6220775ef12fca0f1372d8d2f55db4a68aa411ba256",
+  "calibration.json": "7ec35466e48b343a6d5a438fa63a02be875efaaf277f0638138370c08842d8bd",
+  "manifest.json": "38f55ea16fc01155a210b2757781ed8fe5de4a6bc3ff85952d869057206656f1",
+  "feature_schema_v1.json": "1d4040757f003a484fa4c3d867526e82fe9ab89906ccc91c4a33831b7c5e7b1a",
+  "product_catalog_v1.csv": "79defa74c953826b7d0511464c62433a0c8909943226ce86c4d1db6dc201bbb3"
+}

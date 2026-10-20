@@ -1,19 +1,24 @@
 # Project F.I.X. Dashboard
 
-The React + Vite dashboard for Project F.I.X. It includes English and Simplified Chinese interfaces and an integrated mock workflow for Inventory, Analysis, forecast results, Exceptions and human review.
+The React + Vite dashboard for Project F.I.X. It includes English and Simplified Chinese interfaces for Inventory, Analysis, forecast results, Exceptions, human review and backend execution logs. Local integration now connects the real `s001-global-q-v1` model through a public API, an independent SQLite database and a separate worker.
 
-**中文文档：[整合版改动说明](docs/changes-zh.md) · [运行与验收](docs/react-integration.md) · [团队接入说明](docs/team-integration-ZH.md)**
+**2026-10-21 main 更新：[本次更新说明（中文）](docs/changes-zh.md) · [真实模型启动与团队交接](docs/local-integration-zh.md)。PostgreSQL 仍待正式后端接入。GitHub Pages 展示 mock；真实预测需启动本地服务。**
+
+**中文文档：[W04 数据流核对与接口传输](docs/data-flow-audit-zh.md) · [整合版改动说明](docs/changes-zh.md) · [后端日志接入约定](docs/backend-logs-contract.md) · [日志与接口传输](docs/dashboard-logging-zh.md) · [运行与验收](docs/react-integration.md) · [团队接入说明](docs/team-integration-ZH.md)**
 
 ## Run locally
 
-Requires Node.js 20.19 or newer.
+Requires Node.js 20.19 or newer and Python 3.12 for the verified local setup.
 
 ```bash
 npm ci
-npm run dev
+python -m venv .venv-model
+.\.venv-model\Scripts\python.exe -m pip install -r ai/requirements-dev.txt
+.\scripts\start-local-demo.ps1
+.\.venv-model\Scripts\python.exe -m local_backend.import_csv
 ```
 
-Open the local URL printed by Vite. The React pages now share the mock API: inventory → analysis → status/results → exceptions → review. Refresh restores records in the same browser. Fixtures are synthetic; no real worker, database or trained model is connected.
+Open `http://127.0.0.1:5174/FIX_dashboard/#/analysis` and use `2023-11-15`. Loopback pages select the local live API; static hosting retains mock mode. The CSV importer sends 14,620 S001 observations through the public API. Results and reviews persist in `.local-integration/fix.sqlite3`; restarting does not remove them. See the Chinese guide for stopping services and returning to mock mode.
 
 ## Routes
 
@@ -22,6 +27,7 @@ Open the local URL printed by Vite. The React pages now share the mock API: inve
 - `/#/analysis/:runId`
 - `/#/exceptions`
 - `/#/exceptions/:caseId`
+- `/#/logs`
 
 ## Publish
 
@@ -52,5 +58,5 @@ Validate the mock and HTTP adapter with `node --test frontend/tests/*.test.js`.
 - `/#/exceptions?run_id=...&status=pending_review` filters the queue.
 - `/#/exceptions/:caseId` loads the exact case and persists approve/modify/reject/resolve decisions.
 - Configure the React deployment in `public/runtime-config.js`; the built file is `dist/runtime-config.js`. The standalone reference uses `frontend/runtime-config.js`. Never add secrets to either file.
-- The backend API and model are still pending; `live` requires the documented retail endpoints.
+- The local API implements the retail contracts with SQLite. Formal PostgreSQL migrations, hosted deployment, authentication and crashed-job recovery remain team backend work.
 - See [integrated acceptance guide](docs/react-integration.md).
