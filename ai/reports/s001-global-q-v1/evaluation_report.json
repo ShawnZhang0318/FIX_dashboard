@@ -1,0 +1,129 @@
+{
+  "model_version": "s001-global-q-v1",
+  "validation_uncalibrated_comparison": [
+    {
+      "model": "rolling_7_x_lead_time",
+      "n": 2040,
+      "mae": 469.18242296917504,
+      "wape": 0.31850746870343,
+      "p50_pinball": 234.59121148458752,
+      "p90_pinball": null,
+      "p90_coverage": null,
+      "mean_p90_minus_p50": null
+    },
+    {
+      "model": "rolling_28_x_lead_time",
+      "n": 2040,
+      "mae": 368.7374299718848,
+      "wape": 0.25031974704702314,
+      "p50_pinball": 184.3687149859424,
+      "p90_pinball": null,
+      "p90_coverage": null,
+      "mean_p90_minus_p50": null
+    },
+    {
+      "model": "lightgbm_quantile_uncalibrated",
+      "n": 2040,
+      "mae": 319.47210137149716,
+      "wape": 0.21687566572775535,
+      "p50_pinball": 159.73605068574858,
+      "p90_pinball": 85.02760793295806,
+      "p90_coverage": 0.8127450980392157,
+      "mean_p90_minus_p50": 384.2795307299095
+    }
+  ],
+  "validation_calibrated_diagnostic": {
+    "n": 2040,
+    "mae": 319.47210137149716,
+    "wape": 0.21687566572775535,
+    "p50_pinball": 159.73605068574858,
+    "p90_pinball": 70.26333811158742,
+    "p90_coverage": 0.9083333333333333,
+    "mean_p90_minus_p50": 577.1880716434479
+  },
+  "test_comparison": [
+    {
+      "model": "rolling_7_x_lead_time",
+      "n": 2040,
+      "mae": 444.41078431364696,
+      "wape": 0.2956468144359968,
+      "p50_pinball": 222.20539215682348,
+      "p90_pinball": null,
+      "p90_coverage": null,
+      "mean_p90_minus_p50": null
+    },
+    {
+      "model": "rolling_28_x_lead_time",
+      "n": 2040,
+      "mae": 319.5167717088471,
+      "wape": 0.21256035867915699,
+      "p50_pinball": 159.75838585442355,
+      "p90_pinball": null,
+      "p90_coverage": null,
+      "mean_p90_minus_p50": null
+    },
+    {
+      "model": "lightgbm_quantile_v1",
+      "n": 2040,
+      "mae": 297.8565865972463,
+      "wape": 0.1981507967279797,
+      "p50_pinball": 148.92829329862315,
+      "p90_pinball": 74.42939387940868,
+      "p90_coverage": 0.9357843137254902,
+      "mean_p90_minus_p50": 600.1874082534334
+    }
+  ],
+  "test_per_lead_time": [
+    {
+      "lead_time_days": 3,
+      "n": 408,
+      "mae": 173.189194644726,
+      "wape": 0.4017442628466632,
+      "p50_pinball": 86.594597322363,
+      "p90_pinball": 41.429199870867116,
+      "p90_coverage": 0.8333333333333334,
+      "mean_p90_minus_p50": 234.50334015339254
+    },
+    {
+      "lead_time_days": 7,
+      "n": 408,
+      "mae": 232.44545838820662,
+      "wape": 0.25768956153799083,
+      "p50_pinball": 116.22272919410331,
+      "p90_pinball": 58.1191186715457,
+      "p90_coverage": 0.9583333333333334,
+      "mean_p90_minus_p50": 492.67415819248635
+    },
+    {
+      "lead_time_days": 10,
+      "n": 408,
+      "mae": 326.3804868165762,
+      "wape": 0.23418587149488254,
+      "p50_pinball": 163.1902434082881,
+      "p90_pinball": 81.20505950884132,
+      "p90_coverage": 0.946078431372549,
+      "mean_p90_minus_p50": 584.4662916151582
+    },
+    {
+      "lead_time_days": 14,
+      "n": 408,
+      "mae": 356.30685301836195,
+      "wape": 0.17795170429536578,
+      "p50_pinball": 178.15342650918097,
+      "p90_pinball": 82.85514523682593,
+      "p90_coverage": 0.9558823529411765,
+      "mean_p90_minus_p50": 724.0061460169329
+    },
+    {
+      "lead_time_days": 21,
+      "n": 408,
+      "mae": 400.9609401183606,
+      "wape": 0.14387715282525743,
+      "p50_pinball": 200.4804700591803,
+      "p90_pinball": 108.53844610896344,
+      "p90_coverage": 0.9852941176470589,
+      "mean_p90_minus_p50": 965.2871052891974
+    }
+  ],
+  "note": "Test metrics are evaluation only. Do not tune from Test results."
+}

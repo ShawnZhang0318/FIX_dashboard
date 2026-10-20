@@ -1,0 +1,84 @@
+{
+  "imported_on": "2026-10-19",
+  "source": "Google Drive Colab Notebooks/6000C",
+  "files": [
+    {
+      "path": "ai/artifacts/s001-global-q-v1/model_p50.joblib",
+      "drive_file_id": "1PgiO_AA2wop1WqXfP468LDc1-OH1O1E-",
+      "size_bytes": 581482,
+      "sha256": "142dc11dcec8dc7ac9714fbb605a841bab9d584b8398edb2aedcf002b12a9390"
+    },
+    {
+      "path": "ai/artifacts/s001-global-q-v1/model_p90.joblib",
+      "drive_file_id": "1ruXnOkYeCm9KGO0SQ2_p0Dn0RSNiWv4L",
+      "size_bytes": 586665,
+      "sha256": "7c182d41d2e577e84881a6220775ef12fca0f1372d8d2f55db4a68aa411ba256"
+    },
+    {
+      "path": "ai/artifacts/s001-global-q-v1/calibration.json",
+      "drive_file_id": "1YBko0bfjxS8JfDWzcbbzi6eh1wLSvTek",
+      "size_bytes": 408,
+      "sha256": "7ec35466e48b343a6d5a438fa63a02be875efaaf277f0638138370c08842d8bd"
+    },
+    {
+      "path": "ai/artifacts/s001-global-q-v1/manifest.json",
+      "drive_file_id": "1j57CiWqxhR93PMI7prJy-rMFS91SGSwr",
+      "size_bytes": 2582,
+      "sha256": "38f55ea16fc01155a210b2757781ed8fe5de4a6bc3ff85952d869057206656f1"
+    },
+    {
+      "path": "ai/artifacts/s001-global-q-v1/feature_schema_v1.json",
+      "drive_file_id": "1K_TS80WEqpL_wkHmJ2dOuspuj3e2v1BB",
+      "size_bytes": 818,
+      "sha256": "1d4040757f003a484fa4c3d867526e82fe9ab89906ccc91c4a33831b7c5e7b1a"
+    },
+    {
+      "path": "ai/artifacts/s001-global-q-v1/product_catalog_v1.csv",
+      "drive_file_id": "1K20zue877rU0APy8X33nslcZViEbpSMR",
+      "size_bytes": 500,
+      "sha256": "79defa74c953826b7d0511464c62433a0c8909943226ce86c4d1db6dc201bbb3"
+    },
+    {
+      "path": "data/processed/v1/s001_sales_clean_v1.csv",
+      "drive_file_id": "1k19x1z66WENXsTdZdc0-viRqeRGFRg_k",
+      "size_bytes": 1030072,
+      "sha256": "87f279305a6152f345896632953896dc5bc6265133b1da6affb4bb4495aa9e4f"
+    },
+    {
+      "path": "data/metadata/v1/preprocess_manifest_v1.json",
+      "drive_file_id": "1agX_Lz9FaiGXfEQy7Ba-077uJa0wns6i",
+      "size_bytes": 1285,
+      "sha256": "ffad94d4a956b705e06f097c44d291e06d21ce067a9bf8171d516351aa3077a9"
+    },
+    {
+      "path": "data/raw/retail_store_inventory_data.csv",
+      "drive_file_id": "1c9OFsqssrcPZ7LDT1DDvyv18nQZN2dYK",
+      "size_bytes": 6191463,
+      "sha256": "c7b6019887d85e6bb311a76da72560463e6bf269bfadbe4b326fbff3b1000468"
+    },
+    {
+      "path": "ai/examples/example_analyze_request.json",
+      "drive_file_id": "18BsiYr2GRpZjPMdeNLhO6scQb8MX2Qh5",
+      "size_bytes": 433,
+      "sha256": "ee2917539425cc4cb0ff61130e3524db7c62442965d575388649a4dbf36075e2"
+    },
+    {
+      "path": "ai/reports/s001-global-q-v1/evaluation_report.json",
+      "drive_file_id": "1n3b_rZ_MNApzjpib0H3MMzYlloItxb6z",
+      "size_bytes": 3650,
+      "sha256": "c674ccc87284e9c7e7a2269749f660937d4e29af4a4180bde0e7cd2b47c1939f"
+    },
+    {
+      "path": "ai/reports/s001-global-q-v1/feature_importance.csv",
+      "drive_file_id": "1P-y4_TlBlyQ63ph5dIgjTiPXKhIVhdQN",
+      "size_bytes": 606,
+      "sha256": "472010825aa485920af78d1ffa89b9804e3ca5f0d5feb4ba4a65917a27ea5a56"
+    },
+    {
+      "path": "ai/notebooks/model_v1.ipynb",
+      "drive_file_id": "1dhyUFnE6kdi_kDYHcIDxdjGGx1JJMOXE",
+      "size_bytes": 211134,
+      "sha256": "b3dd63e3ed3c5e3121d4cc14c0f54d3ece2c195a3b00d5f0456a2130c561eff6"
+    }
+  ]
+}

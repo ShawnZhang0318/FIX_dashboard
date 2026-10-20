@@ -1,5 +1,9 @@
 # Project F.I.X. Dashboard
 
+AI v1 handoff assets and Python integration code are available in [ai/README.md](ai/README.md).
+See [AI delivery status](docs/ai-handoff-plan.md) and [model data handoff](docs/model-data-handoff.md).
+These additions do not connect the dashboard to a live model or database.
+
 The React + Vite dashboard for Project F.I.X. It includes English and Simplified Chinese interfaces and an integrated mock workflow for Inventory, Analysis, forecast results, Exceptions and human review.
 
 **中文文档：[整合版改动说明](docs/changes-zh.md) · [运行与验收](docs/react-integration.md) · [团队接入说明](docs/team-integration-ZH.md)**
