@@ -1,8 +1,7 @@
-"""Loopback-only integration API. Production PostgreSQL adapter is still pending."""
+"""Loopback integration API with SQLite and PostgreSQL persistence."""
 from contextlib import asynccontextmanager
 from datetime import date, datetime, timedelta
 import json
-import sqlite3
 from time import perf_counter
 from typing import Literal
 from uuid import uuid4
@@ -18,7 +17,8 @@ from local_backend.schemas import SnapshotBatch, RunRequest, Review
 @asynccontextmanager
 async def lifespan(app):
     s.initialize()
-    s.log("api", "startup", "api.started", "Local SQLite integration API started")
+    database = "PostgreSQL" if s.is_postgres() else "local SQLite"
+    s.log("api", "startup", "api.started", f"{database} integration API started")
     yield
 
 
@@ -73,7 +73,8 @@ def require(value):
 
 @app.get("/health/live")
 def live():
-    return {"service": "api", "status": "ok", "database": "local SQLite"}
+    return {"service": "api", "status": "ok",
+            "database": "PostgreSQL" if s.is_postgres() else "local SQLite"}
 
 
 @app.get("/health/ready")
@@ -116,12 +117,12 @@ def snapshots(store_id: Literal["S001"] = "S001", product_id: str | None = None,
 def ingest(payload: SnapshotBatch, request: Request):
     try:
         with s.connect() as db:
-            db.execute("BEGIN IMMEDIATE")
+            s.begin_write(db)
             result = s.ingest(db, [x.model_dump(mode="json") for x in payload.snapshots], payload.source_file_sha256.lower())
             s.event(db, "api", "ingestion", "snapshots.committed", f"Committed {result['inserted_count']} snapshots",
                     request_id=request.state.request_id, context={"source_sha256": payload.source_file_sha256})
             return result
-    except sqlite3.IntegrityError as exc:
+    except s.integrity_errors() as exc:
         raise HTTPException(409, "Duplicate snapshot identity; entire batch rolled back") from exc
 
 
@@ -131,7 +132,7 @@ def create_run(payload: RunRequest, request: Request):
     if cutoff < s.MANIFEST["earliest_honest_backtest_origin"]:
         raise HTTPException(422, "This trained/calibrated model requires a cutoff on or after 2023-09-01")
     with s.connect() as db:
-        db.execute("BEGIN IMMEDIATE")
+        s.begin_write(db)
         current = list(db.execute("SELECT * FROM snapshots WHERE store_id=? AND snapshot_date=? ORDER BY product_id",
                                   (payload.store_id, cutoff)))
         if {r["product_id"] for r in current} != set(s.MANIFEST["product_id_categories"]):
@@ -153,7 +154,7 @@ def create_run(payload: RunRequest, request: Request):
                              "history": [dict(h) for h in history]})
         run_id, job_id, now = str(uuid4()), str(uuid4()), s.utcnow()
         request.state.run_id = run_id
-        ref = f"sqlite:run/{run_id}/frozen-input"
+        ref = f"{'postgresql' if s.is_postgres() else 'sqlite'}:run/{run_id}/frozen-input"
         frozen = {"input_reference": ref, "store_id": payload.store_id, "as_of_date": cutoff,
                   "products": selected, "policy": s.POLICY, "model_version": s.MANIFEST["model_version"],
                   "feature_schema_version": s.MANIFEST["feature_schema_version"],
@@ -163,8 +164,7 @@ def create_run(payload: RunRequest, request: Request):
                 "completed_at": None, "processed_count": 0, "expected_count": len(selected), "partial": False,
                 "error": None, "input_reference": ref, "model_version": frozen["model_version"],
                 "policy_version": s.POLICY["version"]}
-        db.execute("INSERT INTO runs VALUES(?,?,?,?,?)", (run_id, "queued", now, s.encode(data), s.encode(frozen)))
-        db.execute("INSERT INTO jobs VALUES(?,?,?)", (job_id, run_id, "pending"))
+        s.insert_run(db, run_id, job_id, payload, cutoff, ref, now, data, frozen)
         s.event(db, "api", "queue", "run.queued", f"Run and job committed; {len(selected)} selected products",
                 run_id=run_id, job_id=job_id, request_id=request.state.request_id)
         return {"analysis_run": {"id": run_id, "status": "queued"}, "job": {"id": job_id, "status": "pending"}}
@@ -195,7 +195,8 @@ def exceptions(store_id: Literal["S001"] = "S001", run_id: str | None = None,
             params.append(value)
     with s.connect() as db:
         db.execute("BEGIN")
-        return [s.case_data(db, r[0]) for r in db.execute(sql+" ORDER BY rowid DESC", params)]
+        order = "created_at DESC,id DESC" if s.is_postgres() else "rowid DESC"
+        return [s.case_data(db, r[0]) for r in db.execute(sql+f" ORDER BY {order}", params)]
 
 
 @app.get("/exceptions/{case_id}")
@@ -207,7 +208,9 @@ def exception(case_id: str):
 @app.post("/exceptions/{case_id}/review")
 def review(case_id: str, payload: Review, request: Request):
     with s.connect() as db:
-        db.execute("BEGIN IMMEDIATE")
+        s.begin_write(db)
+        if s.is_postgres():
+            db.execute("SELECT id FROM cases WHERE id=? FOR UPDATE", (case_id,)).fetchone()
         case = require(s.case_data(db, case_id))
         if case["status"] != "pending_review" or case["parent_run_status"] != "completed" or case["partial"]:
             raise HTTPException(409, "Only pending cases from complete runs may be reviewed")
@@ -228,7 +231,7 @@ def review(case_id: str, payload: Review, request: Request):
         data = {k: v for k, v in case.items() if k not in ("result", "parent_run_status", "partial", "status")}
         data.update(reviewer_decision=decision, reviewer_order_quantity=quantity, reviewer_label=payload.reviewer_label,
                     override_reason=payload.override_reason, reviewed_at=s.utcnow())
-        db.execute("UPDATE cases SET status=?,data=? WHERE id=? AND status='pending_review'", (state, s.encode(data), case_id))
+        s.set_case_review(db, case_id, state, data)
         s.event(db, "api", "review", "review.committed", f"Advisory decision saved: {decision}; stock unchanged",
                 case_id=case_id, run_id=case["analysis_run_id"],
                 job_id=s.run_data(db, case["analysis_run_id"])["job"]["id"], request_id=request.state.request_id)

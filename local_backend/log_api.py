@@ -30,7 +30,7 @@ def snapshot(request, *, export=False):
     if "from" in filters and "to" in filters and timestamp(filters["from"]) > timestamp(filters["to"]):
         raise HTTPException(422, "from must not exceed to")
     with s.connect() as db:
-        db.execute("BEGIN IMMEDIATE")
+        s.begin_write(db)
         sid = query.get("snapshot_id")
         if sid:
             saved = db.execute("SELECT * FROM log_queries WHERE id=?", (sid,)).fetchone()

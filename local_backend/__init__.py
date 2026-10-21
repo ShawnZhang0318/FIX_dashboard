@@ -1,1 +1,1 @@
-"""Local SQLite integration backend; not the team's PostgreSQL deployment."""
+"""Local integration backend with SQLite demo and configurable PostgreSQL persistence."""

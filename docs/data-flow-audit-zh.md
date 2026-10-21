@@ -4,7 +4,7 @@
 
 ## 结论
 
-原有 Dashboard 的公共 API 方向正确，但未完整实现前端传输合同；第一阶段补齐了请求、响应检查、展示和交接文档。**后续经用户授权，已连接 ai-model-v1，补充独立 SQLite、公共 API、独立 worker 和真实模型服务，完成本机全流程验证。正式 PostgreSQL 尚未接入。** 2026-10-21 整理为 main 更新版。最新实现、实测编号与 W04 的差异说明见[本地联调说明](local-integration-zh.md)。
+原有 Dashboard 的公共 API 方向正确，但未完整实现前端传输合同；第一阶段补齐了请求、响应检查、展示和交接文档。**后续经用户授权，已连接 ai-model-v1，补充独立 SQLite、公共 API、独立 worker 和真实模型服务，完成本机全流程验证；2026-10-22 增加 PostgreSQL schema migration 和可配置后端。** 2026-10-21 整理为 main 更新版。最新实现、配置与尚未完成的数据库服务验收见[本地联调说明](local-integration-zh.md)。
 
 ```mermaid
 sequenceDiagram
@@ -124,7 +124,7 @@ Run/Job 配对为 queued/pending、processing/claimed、completed/completed、fa
 
 ## 服务端职责（前端阶段交接清单）
 
-以下为最初交接时的待办；目前第 2–6 项核心流程及第 1 项公共端点/本地事务已有 SQLite 联调实现。正式 PostgreSQL、Alembic 迁移、部署认证和失效任务恢复仍待团队交付，不应将本机验证当作 PostgreSQL 验证。
+以下为最初交接时的待办；目前第 2–6 项核心流程及第 1 项公共端点/本地事务已有 SQLite 联调实现，PostgreSQL 版本化 SQL migration 已加入代码，但需在团队数据库服务上执行集成验收。部署认证和失效任务恢复仍待团队交付；SQLite 本机测试不等于 PostgreSQL 运行验证。
 
 1. W04 表、迁移、约束、事务和真实公共端点，以及 CORS/代理。
 2. Daily 商品选择、截止日覆盖检查、冻结快照清单及模型/特征/策略版本；只使用 cutoff 以前历史。

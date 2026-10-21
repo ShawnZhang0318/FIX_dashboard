@@ -1,5 +1,6 @@
 from datetime import date, timedelta
 import json
+import os
 from concurrent.futures import ThreadPoolExecutor
 import pytest
 from fastapi.testclient import TestClient
@@ -20,7 +21,16 @@ def snapshot(product="P0001", day=CUTOFF, stock=150, sales=10):
 @pytest.fixture
 def api(tmp_path, monkeypatch):
     monkeypatch.setattr(s, "STATE", tmp_path)
-    monkeypatch.setattr(s, "DB_PATH", tmp_path/"test.sqlite3")
+    postgres_url = os.environ.get("FIX_TEST_POSTGRES_URL", "")
+    if postgres_url:
+        monkeypatch.setattr(s, "DATABASE_URL", postgres_url)
+        s.initialize()
+        with s.connect() as db:
+            db.execute("""TRUNCATE TABLE metadata,log_queries,logs,cases,results,jobs,runs,
+                          inventory,snapshots,transactions,products RESTART IDENTITY CASCADE""")
+    else:
+        monkeypatch.setattr(s, "DB_PATH", tmp_path/"test.sqlite3")
+        monkeypatch.setattr(s, "DATABASE_URL", "")
     with TestClient(app) as client:
         yield client
 
@@ -53,6 +63,50 @@ class StubAI:
                 "predicted_demand_p50": 100.0, "predicted_demand_p90": 200.0,
                 "model_version": s.MANIFEST["model_version"], "feature_schema_version": "features-v1",
                 "input_reference": kwargs["input_reference"]}
+
+
+@pytest.mark.skipif(not os.environ.get("FIX_TEST_POSTGRES_URL"),
+                    reason="requires a dedicated PostgreSQL test database")
+def test_postgresql_persists_normalized_workflow_fields(api):
+    seed()
+    run_id = create(api)
+    worker.process(worker.claim(), StubAI())
+    case = api.get("/exceptions", params={"run_id": run_id}).json()[0]
+    decision = "resolve" if case["exception_type"] == "anomaly" else "approve"
+    response = api.post(f"/exceptions/{case['id']}/review",
+                        json={"decision": decision, "reviewer_label": "PG test",
+                              "override_reason": "Verified normalized persistence"})
+    assert response.status_code == 200, response.text
+
+    with s.connect() as db:
+        snapshot_row = db.execute("""SELECT inventory_level,units_sold,source_sha256
+                                  FROM snapshots WHERE product_id='P0001' AND snapshot_date=?""",
+                                  (str(CUTOFF),)).fetchone()
+        inventory_row = db.execute("""SELECT initial_quantity,on_hand_quantity,default_shipping_method,
+                                      lead_time_days,safety_stock FROM inventory WHERE product_id='P0001'""").fetchone()
+        transaction_count = db.execute("SELECT COUNT(*) FROM transactions").fetchone()[0]
+        run_row = db.execute("SELECT store_id,run_type,as_of_date,status,input_reference FROM runs WHERE id=?", (run_id,)).fetchone()
+        job_row = db.execute("SELECT job_type,status,attempts FROM jobs WHERE run_id=?", (run_id,)).fetchone()
+        result_row = db.execute("""SELECT horizon_days,predicted_demand_p50,predicted_demand_p90,
+                                   anomaly_severity,model_version FROM results
+                                   WHERE run_id=? AND product_id='P0001'""", (run_id,)).fetchone()
+        case_row = db.execute("SELECT exception_type,status,reviewer_decision,reviewer_identity,reviewed_at FROM cases WHERE id=?", (case["id"],)).fetchone()
+
+    assert snapshot_row["inventory_level"] == 500 and snapshot_row["units_sold"] == 10
+    assert snapshot_row["source_sha256"] == "a" * 64
+    assert inventory_row["initial_quantity"] == inventory_row["on_hand_quantity"] == 500
+    assert inventory_row["default_shipping_method"] is None and inventory_row["lead_time_days"] == 3
+    assert inventory_row["safety_stock"] is None
+    assert transaction_count == 0
+    assert run_row["store_id"] == "S001" and run_row["run_type"] == "daily"
+    assert run_row["as_of_date"] == str(CUTOFF) and run_row["status"] == "completed"
+    assert run_row["input_reference"].startswith("postgresql:")
+    assert job_row["job_type"] == "forecast" and job_row["status"] == "completed" and job_row["attempts"] == 1
+    assert result_row["horizon_days"] == 3 and result_row["predicted_demand_p90"] >= result_row["predicted_demand_p50"]
+    assert result_row["anomaly_severity"] in (0,1)
+    assert result_row["model_version"] == s.MANIFEST["model_version"]
+    assert case_row["status"] in ("approved", "resolved") and case_row["reviewer_decision"] == decision
+    assert case_row["reviewer_identity"] == "PG test" and case_row["reviewed_at"]
 
 
 def test_atomic_ingestion_duplicate_rollback_and_historical_current_view(api):

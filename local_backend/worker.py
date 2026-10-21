@@ -10,18 +10,26 @@ from local_backend import storage as s
 
 def claim():
     with s.connect() as db:
-        db.execute("BEGIN IMMEDIATE")
-        db.execute("INSERT OR REPLACE INTO metadata VALUES('worker_heartbeat',?)", (s.utcnow(),))
-        job = db.execute("""SELECT jobs.* FROM jobs JOIN runs ON runs.id=jobs.run_id
-                         WHERE jobs.status='pending' AND runs.status='queued' ORDER BY runs.created_at LIMIT 1""").fetchone()
+        s.begin_write(db)
+        db.execute("""INSERT INTO metadata(key,value) VALUES('worker_heartbeat',?)
+                      ON CONFLICT(key) DO UPDATE SET value=excluded.value""", (s.utcnow(),))
+        claim_sql = """SELECT jobs.* FROM jobs JOIN runs ON runs.id=jobs.run_id
+                       WHERE jobs.status='pending' AND runs.status='queued'
+                       ORDER BY runs.created_at LIMIT 1"""
+        if s.is_postgres():
+            claim_sql += " FOR UPDATE OF jobs SKIP LOCKED"
+        job = db.execute(claim_sql).fetchone()
         if not job:
             return None
         run = s.run_data(db, job["run_id"])
         request_id = json.loads(db.execute("SELECT frozen_input FROM runs WHERE id=?", (job["run_id"],)).fetchone()[0])["request_id"]
-        run["started_at"] = s.utcnow()
+        started_at = s.utcnow()
+        run["started_at"] = started_at
         run.pop("job", None)
-        db.execute("UPDATE jobs SET status='claimed' WHERE id=? AND status='pending'", (job["id"],))
-        db.execute("UPDATE runs SET status='processing',data=? WHERE id=?", (s.encode(run), job["run_id"]))
+        s.set_job_state(db, job["id"], "claimed", claimed_at=started_at)
+        if s.is_postgres():
+            db.execute("UPDATE jobs SET attempts=attempts+1 WHERE id=?", (job["id"],))
+        s.set_run_state(db, job["run_id"], "processing", run, started_at=started_at)
         s.event(db, "worker", "claim", "job.claimed", "Job claimed and committed before inference",
                 run_id=job["run_id"], job_id=job["id"], request_id=request_id, attempt=1)
         return dict(job)
@@ -83,18 +91,19 @@ def process(job, client):
                       "triggered_reasons": (["stockout_risk"] if quantity else [])+(["unusual_demand"] if unusual else []),
                       "explanation": f"Reorder = ceil(max(0, P90 − observed stock)). Worker unusual-sales rule: today's sales > {threshold:.2f}; no AI anomaly model."}
             with s.connect() as db:
-                db.execute("BEGIN IMMEDIATE")
-                db.execute("INSERT INTO results VALUES(?,?,?,?,?)", (result_id, run_id, product["product_id"], cutoff["id"], s.encode(result)))
+                s.begin_write(db)
+                s.insert_result(db, result, product["product_id"], cutoff["id"])
                 if case_id:
                     kind = "reorder_and_anomaly" if quantity and unusual else "reorder" if quantity else "anomaly"
                     case = {"id": case_id, "analysis_run_id": run_id, "forecast_result_id": result_id,
                             "exception_type": kind, "created_at": s.utcnow()}
-                    db.execute("INSERT INTO cases VALUES(?,?,?,?,?)", (case_id, run_id, result_id, "pending_review", s.encode(case)))
+                    s.insert_case(db, case, "pending_review")
                 run = s.run_data(db, run_id)
                 run.pop("job", None)
                 run["processed_count"] += 1
-                db.execute("UPDATE runs SET data=? WHERE id=?", (s.encode(run), run_id))
-                db.execute("INSERT OR REPLACE INTO metadata VALUES('worker_heartbeat',?)", (s.utcnow(),))
+                s.set_run_state(db, run_id, None, run)
+                db.execute("""INSERT INTO metadata(key,value) VALUES('worker_heartbeat',?)
+                              ON CONFLICT(key) DO UPDATE SET value=excluded.value""", (s.utcnow(),))
                 s.event(db, "worker", "persistence", "result.committed", "Forecast and optional case committed atomically",
                         case_id=case_id, duration_ms=result["duration_ms"], **context)
         finish(run_id, job_id)
@@ -104,17 +113,18 @@ def process(job, client):
 
 def finish(run_id, job_id, error=None):
     with s.connect() as db:
-        db.execute("BEGIN IMMEDIATE")
+        s.begin_write(db)
         run = s.run_data(db, run_id)
         run.pop("job", None)
         if not error and run["processed_count"] != run["expected_count"]:
             error = RuntimeError("Result count differs from the frozen product set")
         status = "failed" if error else "completed"
         request_id = json.loads(db.execute("SELECT frozen_input FROM runs WHERE id=?", (run_id,)).fetchone()[0])["request_id"]
-        run.update(completed_at=s.utcnow(), partial=bool(error and run["processed_count"]),
+        completed_at = s.utcnow()
+        run.update(completed_at=completed_at, partial=bool(error and run["processed_count"]),
                    error=str(error) if error else None)
-        db.execute("UPDATE runs SET status=?,data=? WHERE id=?", (status, s.encode(run), run_id))
-        db.execute("UPDATE jobs SET status=? WHERE id=?", (status, job_id))
+        s.set_run_state(db, run_id, status, run, completed_at=completed_at)
+        s.set_job_state(db, job_id, status, completed_at=completed_at, error=error)
         s.event(db, "worker", "completion", f"job.{status}", f"Run {status}; {run['processed_count']}/{run['expected_count']} saved",
                 level="ERROR" if error else "INFO", error=error, run_id=run_id, job_id=job_id, request_id=request_id)
 

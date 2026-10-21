@@ -1,6 +1,6 @@
 # 真实模型本地联调：启动、数据流与团队交接
 
-更新：2026-10-21。2026-10-20 按用户选择完成“本地联调后端、真实预测、独立本地数据库”；本说明随整合代码发布到 main，正式 PostgreSQL 后续接入。仅上传代码、模型/原始数据与文档，不上传本地数据库、审核记录、执行日志或虚拟环境。
+更新：2026-10-22。默认仍是本地 SQLite 联调；设置 `FIX_DATABASE_URL` 后，API 和 worker 使用 PostgreSQL，并在启动时应用版本化 schema migration。仅上传代码、模型/原始数据与文档，不上传本地数据库、审核记录、执行日志或虚拟环境。
 
 ## 已接通的内容
 
@@ -10,7 +10,7 @@
 flowchart LR
   CSV[原始 CSV 导入客户端] -->|POST /snapshots| API[公共 API :8000]
   UI[Dashboard :5174] <-->|创建、查询、审核、日志| API
-  API <--> DB[(独立本地 SQLite)]
+  API <--> DB[(SQLite by default / PostgreSQL via FIX_DATABASE_URL)]
   W[独立 polling worker] <--> DB
   W -->|POST /analyze| AI[私有模型服务 :8001]
   AI -->|真实 P50 / P90| W
@@ -42,8 +42,12 @@ flowchart LR
 在项目根目录打开 PowerShell。已安装环境不需再次安装。
 
 ```powershell
+# 可选：指定团队 PostgreSQL；不设置则使用本地 SQLite。
+$env:FIX_DATABASE_URL = "postgresql://USER:PASSWORD@HOST:5432/DBNAME"
 .\scripts\start-local-demo.ps1
 ```
+
+macOS/Linux shell 对应设置为 `export FIX_DATABASE_URL='postgresql://USER:PASSWORD@HOST:5432/DBNAME'`。API 和 worker 必须继承同一个变量。连接凭据仅放在环境变量或秘密管理服务中。PostgreSQL 是新数据库；切换过去不会自动复制 SQLite 里的快照、运行、审核或日志。
 
 脚本启动 API、worker、AI 和 Dashboard，窗口隐藏，保留进程编号及启动时间。已运行或端口占用时会停止启动并提示，不会结束其他程序。
 
@@ -73,7 +77,7 @@ python -m venv .venv-model
 
 | 文件 / 目录 | 用途 |
 | --- | --- |
-| `.local-integration/fix.sqlite3` | 观测、最新库存、冻结输入、Run/Job、预测、审核、执行日志、日志查询快照 |
+| `.local-integration/fix.sqlite3` | 未设置 `FIX_DATABASE_URL` 时的本地 SQLite 数据 |
 | `.local-integration/ai-events.jsonl` | 私有 AI 的真实应用日志；AI 不直接写业务数据库 |
 | `.local-integration/*-stdout.log`、`*-stderr.log` | 各进程的本次启动控制台输出；下次启动覆盖这些控制台文件 |
 | `.local-integration/verification.json` | 最近一次真实联调验收输出 |
@@ -83,13 +87,14 @@ python -m venv .venv-model
 
 ## 模型与 W04 需要明确的适配
 
-1. **数据库。** 本地 SQLite 是用户授权的联调替代，结构采用七类核心实体及日志辅助表。不是 PostgreSQL/SQLAlchemy/Alembic 正式实现。JSON 负载和 SQLite 初始 schema 版本 1 不等于 W04 的正式数据库迁移。
-2. **历史日期。** 模型训练标签至 2023-04-30、校准标签至 2023-08-31，因此接口拒绝 2023-09-01 之前的分析；默认改成 2023-11-15。W04 中的 2022-06-30 是示例日期，不适合用这个训练后的模型做无泄漏历史演示。
-3. **交货期。** ai-model-v1 按商品冻结了模拟交货期 3/7/10/14/21 天，必须与其 catalog 一致。它不是 W04 提议的按训练窗口类别众数推导的交货期；本地采用模型已有映射并保存 catalog 哈希，没有偷偷重分配。原始类别/地区仍按快照保存。
-4. **异常。** 该 AI 分支只输出分位数预测，未提供异常模型。worker 使用显式版本化规则：当日销量 > `max(5, 前28日平均销量 × 2)` 视为 unusual_demand。规则不使用未来数据或 CSV 的 Demand Forecast。异常分数记录销量/`max(历史均值,1)`，`anomaly_threshold` 是销量单位的实际阈值，`anomaly_severity` 为 0/1。规则、阈值和触发理由与结果一起保存。
-5. **补货。** `safety_stock = P90 − P50`，`recommended_order_quantity = ceil(max(0, P90 − cutoff库存))`。补货大于零或触发异常规则才创建案例；两者同时出现为组合案例。
-6. **冷启动。** 模型需要连续 29 日，缺失则创建任务时返回 422，不补零、不伪造预测。Monthly 暂不实现，明确拒绝；完整覆盖且没有 Daily 入选商品时成功完成零结果。
-7. **模型不变。** 模型和哈希对应文件恢复为原发布字节；`.gitattributes` 禁止 Git 换行转换再次破坏哈希。推理仍验证所有制品校验值。仅本机执行线程数设为 1，避免单行推理的多线程开销，不改变模型树或校准参数。
+1. **数据库。** 未设置 `FIX_DATABASE_URL` 时使用 SQLite；设置为 `postgresql://...` 时，API 与 worker 共用 PostgreSQL。首次启动会依序执行 `local_backend/migrations/` 中尚未应用的 SQL migration，版本记录写入 `schema_migrations`。PostgreSQL 实现 ERD 中的 Product、InventoryItem、Transaction、AnalysisRun、Job、ForecastResult 和 ExceptionCase，并保留 DailyInventorySnapshot 作为模型历史输入。InventoryItem 的 `product_id` 是主键，因此每个 Product 最多一个当前库存记录；`store_id` 保留为当前 S001 API 的兼容字段。CSV 提供的是每日汇总，不是逐笔交易，因此导入器不会伪造 Transaction 记录；交易表目前为空，需接入真实交易来源后再写入。Product 名称暂以稳定 product ID 填充，因为 CSV 没有独立产品名称；初始库存以首次录入该产品时的库存快照值初始化，默认运输方式未知时为 NULL。PostgreSQL 的 `data` 文本列保留现有 API 序列化响应，不替代规范化约束列。SQLite 仍使用现有本地 demo schema；现有 SQLite 记录不会自动复制到 PostgreSQL，请重新导入快照数据。
+2. **PostgreSQL 环境配置。** 在启动 API 和 worker 的 shell 环境中都设置同一个 `FIX_DATABASE_URL`，例如 `postgresql://USER:PASSWORD@HOST:5432/DBNAME`。不要把真实密码提交到仓库。连接失败会导致服务启动失败，不会静默切回 SQLite。部署方仍需创建数据库、网络访问和备份策略；团队尚未确定 hosted provider。
+3. **历史日期。** 模型训练标签至 2023-04-30、校准标签至 2023-08-31，因此接口拒绝 2023-09-01 之前的分析；默认改成 2023-11-15。W04 中的 2022-06-30 是示例日期，不适合用这个训练后的模型做无泄漏历史演示。
+4. **交货期。** ai-model-v1 按商品冻结了模拟交货期 3/7/10/14/21 天，必须与其 catalog 一致。它不是 W04 提议的按训练窗口类别众数推导的交货期；本地采用模型已有映射并保存 catalog 哈希，没有偷偷重分配。原始类别/地区仍按快照保存。
+5. **异常。** 该 AI 分支只输出分位数预测，未提供异常模型。worker 使用显式版本化规则：当日销量 > `max(5, 前28日平均销量 × 2)` 视为 unusual_demand。规则不使用未来数据或 CSV 的 Demand Forecast。异常分数记录销量/`max(历史均值,1)`，`anomaly_threshold` 是销量单位的实际阈值，`anomaly_severity` 为 0/1。规则、阈值和触发理由与结果一起保存。
+6. **补货。** `safety_stock = P90 − P50`，`recommended_order_quantity = ceil(max(0, P90 − cutoff库存))`。补货大于零或触发异常规则才创建案例；两者同时出现为组合案例。
+7. **冷启动。** 模型需要连续 29 日，缺失则创建任务时返回 422，不补零、不伪造预测。Monthly 暂不实现，明确拒绝；完整覆盖且没有 Daily 入选商品时成功完成零结果。
+8. **模型不变。** 模型和哈希对应文件恢复为原发布字节；`.gitattributes` 禁止 Git 换行转换再次破坏哈希。推理仍验证所有制品校验值。仅本机执行线程数设为 1，避免单行推理的多线程开销，不改变模型树或校准参数。
 
 本机为 Python 3.12.10；交付 manifest 记录训练环境 Python 3.13.16。其余主要模型依赖按分支固定版本安装，真实回归预测已在本机通过，不能据此推定所有 Python 版本都兼容。
 
@@ -129,18 +134,20 @@ npm run build
 
 测试目录必须用专用空目录；pytest 会清理其指定的 basetemp，不能指定数据库所在的 `.local-integration` 本身。原文件副本 `docs/w04-reference/` 保持不变。
 
+PostgreSQL workflow test 默认跳过。若要运行，先设置 `FIX_TEST_POSTGRES_URL` 指向专用、可丢弃的测试数据库，再执行 `local_backend/tests/test_flow.py`；测试会清空该数据库的工作流表。不要指向团队共享或生产数据库。
+
 ## 交给其他同学接入的接口边界
 
 | 部分 | 本次文件 | 正式接入方式 |
 | --- | --- | --- |
 | Dashboard 公共请求及校验 | `frontend/live-api.js`、`requests.js`、`contracts.js`、`backend-logs.js` | 保持端点、DTO、202 和状态语义；切换配置中的公共 API 地址 |
 | 公共 API | `local_backend/service.py`、`schemas.py` | 后端同学可复用行为合同，替换持久化实现 |
-| 数据库 / 冻结输入 | `local_backend/storage.py` | 替换成正式 PostgreSQL 表、外键/约束、事务和 Alembic 迁移；保留不可变来源 |
+| 数据库 / 冻结输入 | `local_backend/storage.py` | 使用 PostgreSQL 规范化表、外键/约束、事务和版本化 SQL migration；保留不可变来源 |
 | worker / 策略 | `local_backend/worker.py` | 保留原子领取、网络调用前提交、结果/案例一起落库和失败可追溯 |
 | 私有模型客户端 | `integration/worker_ai.py` | 通过 `FIX_AI_URL` 指定内部模型服务；不要改成 Dashboard 直连 |
 | 队友模型 | `ai/`、`data/` | 保留版本和哈希；发布新模型需重新冻结 manifest 与验证 |
 | AI 日志包装 / 公共日志查询 | `local_backend/ai_service.py`、`log_api.py` | 正式环境替换成本队统一日志收集器，保留查询/分页/导出合同 |
 
-正式版本仍需：PostgreSQL 迁移验收、连接池与部署、认证授权、超时领取恢复、容量/保留策略、共享数据导入规范。当前 worker 不自动重放进程被强制中断时已 claimed 的工作，可能保留 processing；请查看其日志并新建独立任务，不手工篡改数据库伪装成功。已经完成或明确失败的记录会保留。
+正式版本仍需：在团队选定的 PostgreSQL 服务上执行集成验收、连接池与部署、认证授权、超时领取恢复、容量/保留策略、共享数据导入规范。当前 worker 不自动重放进程被强制中断时已 claimed 的工作，可能保留 processing；请查看其日志并新建独立任务，不手工篡改数据库伪装成功。已经完成或明确失败的记录会保留。
 
 Zhou 继续负责前端公共请求、分析/结果/日志展示及联调协调；这套本地后端是联调支撑，不意味着正式后端与数据库的团队职责自动转给 Zhou。Zhang 的库存、异常详情和审核页面沿用同一公共 API，无需另写一条到模型的调用链。
