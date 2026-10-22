@@ -288,7 +288,7 @@ function Results({ data, runId }) {
                   <td>{number(x.recommended_order_quantity)}</td>
                   <td>
                     {x.case_id ? (
-                      <Link className="text-link" to={casePath(x.case_id)}>
+                      <Link className="text-link analysis-inspect-link" to={casePath(x.case_id)}>
                         {t("Inspect")}
                       </Link>
                     ) : (
