@@ -2,6 +2,7 @@
 from contextlib import asynccontextmanager
 from datetime import date, datetime, timedelta
 import json
+import os
 from time import perf_counter
 from typing import Literal
 from uuid import uuid4
@@ -23,9 +24,18 @@ async def lifespan(app):
 
 
 app = FastAPI(title="F.I.X. Local Integration API", lifespan=lifespan)
+configured_origins = [
+    origin.strip()
+    for origin in os.environ.get("FIX_ALLOWED_ORIGINS", "").split(",")
+    if origin.strip()
+]
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[f"http://{host}:{port}" for host in ("127.0.0.1", "localhost") for port in (5173, 5174)],
+    allow_origins=configured_origins or [
+        f"http://{host}:{port}"
+        for host in ("127.0.0.1", "localhost")
+        for port in (5173, 5174)
+    ],
     allow_methods=["GET", "POST"], allow_headers=["Content-Type", "X-Request-ID"],
     expose_headers=["X-Request-ID"], allow_credentials=False,
 )

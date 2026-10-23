@@ -1,0 +1,19 @@
+FROM python:3.13-slim
+
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1
+
+WORKDIR /app
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends libgomp1 \
+    && rm -rf /var/lib/apt/lists/*
+
+COPY ai/requirements.txt ai/requirements-railway.txt ./ai/
+RUN python -m pip install --no-cache-dir -r ai/requirements-railway.txt
+
+COPY ai/ ./ai/
+COPY data/ ./data/
+COPY integration/ ./integration/
+COPY local_backend/ ./local_backend/
+
+CMD ["python", "-m", "local_backend.worker"]
