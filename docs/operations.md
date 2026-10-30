@@ -4,9 +4,13 @@
 
 Adapted from the [course operations template](https://github.com/aryansethi21052001/maie6000c/blob/main/docs/operations.md), using its six operational topics and commands supported by Project F.I.X.
 
-**Implementation reference:** `edefcb253e5016a038f1629c5bad202e9c38f6f7`, inspected on 2026-10-30. Commands use **Windows PowerShell from the repository root**. See the [root README](../README.md) for installation and [architecture](architecture.md) for design. Record actual demonstrations and evidence in [submissions/week07/README.md](../submissions/week07/README.md), which is still pending at this revision.
+**Implementation reference:** `61a015ff4094c15fb1333cd375d3daca0f41e830`, inspected on 2026-10-30. Commands use **Windows PowerShell from the repository root**. See the [root README](../README.md) for installation and [architecture](architecture.md) for design. Record actual demonstrations and evidence in [submissions/week07/README.md](../submissions/week07/README.md), which is still pending at this revision.
 
 ## Local startup
+
+**Execution mode:** these steps run real FastAPI and AI services, a separate worker, and persistent storage. The integrated dashboard selects `live` mode on localhost/127.0.0.1 and calls `http://127.0.0.1:8000`; it does not switch to mock data if the backend is unavailable. Starting only the frontend is insufficient. The separate mock mode uses synthetic fixtures and browser storage.
+
+**Verification scope:** the [README's current-status summary](../README.md#currently-works-local-integration) distinguishes historical local acceptance from hosted acceptance still to be recorded. Local success establishes the tested local path; cloud deployment requires its own recorded health, database, worker, result/review, and log checks.
 
 ### 1. Prepare the environment
 
@@ -87,7 +91,7 @@ Invoke-RestMethod "$apiBase/analysis-runs/$runId/results" | ConvertTo-Json -Dept
 
 For a successful full-store run, check `processed_count = expected_count = 20`, `partial = false`, and 20 persisted results. Intermediate states may finish before the next poll; correlated logs retain the processing events. Open an exception and save a review after completion. Reviews are advisory and do not change stock or place orders.
 
-Hosted operation uses separate API, worker, AI, and PostgreSQL services; follow the [Railway guide](railway-deploy-zh.md). GitHub Pages is a static mock preview under the current configuration. A loaded page or `Live API` badge alone does not establish backend readiness.
+Hosted operation uses separate API, worker, AI, and PostgreSQL services; follow the [Railway guide](railway-deploy-zh.md) and [hosted verification checklist](../README.md#railway-verification-still-to-record). GitHub Pages uses mock mode under the default static configuration unless a hosted API URL is supplied. A loaded page or `Live API` badge alone does not establish backend readiness. Report the observed hosted status and log coverage, with its URL, tested commit, and date, separately from local acceptance.
 
 ## Health endpoints
 

@@ -8,7 +8,9 @@ The current scope is one store, **S001**, and its 20 products. The system uses t
 
 Recommendations are advisory: approving a case records a planner's decision; it does not place a purchase order or change inventory. Current inventory is updated from newly accepted daily observations.
 
-## Main capabilities
+## Currently works: local integration
+
+**The documented local demo uses real backend services and a trained model.** Running locally describes where the services run; it does not mean the API is mocked. With the startup instructions below, the dashboard calls FastAPI, a separate worker calls the LightGBM service, and SQLite stores the workflow records by default. A separate mock mode remains available for interface demonstrations.
 
 - Import daily snapshots through the public API and retain their source references.
 - Submit a Daily analysis request and follow its persisted Run and Job states.
@@ -16,6 +18,8 @@ Recommendations are advisory: approving a case records a planner's decision; it 
 - View cumulative lead-time P50/P90 forecasts, replenishment quantities, and result provenance.
 - Review replenishment and unusual-demand cases, including combined cases.
 - Query backend application logs by task, request, service, and time, and export matching records.
+
+The [recorded local acceptance](docs/local-integration-zh.md#本次验证证据) includes a real-model run on **2026-10-20** with **20/20 saved product results**, a persisted approval, unchanged inventory after review, and **175 correlated API/worker/AI log events** checked through pagination and export. These are historical local results, not a new test of today's checkout or a Railway/PostgreSQL acceptance result. Reproduce the flow against the Week 07 checkpoint and record that evidence in its milestone document.
 
 The dashboard communicates with the public API. The worker calls the private AI service and saves results for subsequent retrieval. Detailed component boundaries and data flow belong in the architecture document linked below.
 
@@ -61,7 +65,7 @@ Milestone screenshots, sample outputs, and captured logs should be indexed in th
 - Python 3.12 and the Windows Python launcher (`py`). Python 3.12.10 was used for the local integration checks.
 - Windows PowerShell, with ports **5174**, **8000**, and **8001** available.
 
-The following commands use the default SQLite database. Leave `FIX_DATABASE_URL` unset for this setup. The supplied start/stop scripts are Windows-specific; hosted deployment is documented separately.
+The following commands start the real local stack and use the default SQLite database. Leave `FIX_DATABASE_URL` unset for this setup. The API, worker, and AI service must all be running; opening only the frontend does not start them. The supplied start/stop scripts are Windows-specific; hosted deployment is documented separately.
 
 ### 1. Get the repository and install dependencies
 
@@ -119,17 +123,29 @@ To restart, repeat step 2 in the project directory. Do not start a second copy w
 
 ## Local, hosted, and mock modes
 
-| Mode | What runs |
-| --- | --- |
-| Local model demo | The dashboard connects to the local API; worker, model service, and database must be running. |
-| GitHub Pages preview | The static dashboard uses explicitly labelled mock data under the current configuration. It does not host the Python services or database. |
-| Hosted backend integration | Requires separately configured API, worker, AI, and PostgreSQL services, plus a reachable public API URL for the frontend. |
+| Mode | Data and processing | Verification status |
+| --- | --- | --- |
+| Local real-model integration | Actual HTTP API, separate worker, trained LightGBM model, and SQLite persistence by default | Historical local acceptance is recorded above. Re-run against the checkpoint revision for milestone evidence. |
+| Mock interface demo / default static preview | Synthetic fixtures and browser storage; no model inference or server database | Useful for interface/workflow previews; not backend integration evidence. |
+| Railway / hosted PostgreSQL integration | Hosted frontend connects to a public API; API/worker share PostgreSQL and the worker calls private AI | Database adapter, Dockerfiles, and setup guidance exist. End-to-end cloud acceptance is not established by the evidence linked in this README. |
 
-The [GitHub Pages preview](https://shawnzhang0318.github.io/FIX_dashboard/) is useful for interface demonstrations. It is not evidence of a live model or database connection.
+The [GitHub Pages preview](https://shawnzhang0318.github.io/FIX_dashboard/) uses mock mode with the repository's default static configuration unless a hosted API URL is supplied. GitHub Pages itself hosts no Python services or database.
 
-Browser configuration is in `public/runtime-config.js`. A hosted build can use `VITE_FIX_API_URL` for the public API URL. Backend settings such as `FIX_DATABASE_URL`, `FIX_AI_URL`, and `FIX_ALLOWED_ORIGINS` belong in the relevant service environments; database credentials must never be placed in browser configuration.
+The integrated dashboard's [runtime configuration](public/runtime-config.js) selects `live` mode and `http://127.0.0.1:8000` when opened on `127.0.0.1` or `localhost`. If that API is unavailable, requests fail; the app does not automatically substitute mock predictions. For a hosted frontend, set `VITE_FIX_API_URL` at build time or configure a hosted public API URL in the runtime settings. A `Live API` badge indicates the selected mode, not successful service execution.
 
-The PostgreSQL adapter and deployment files are implemented, but their presence alone does not establish successful deployment or milestone acceptance. Follow the [Railway guide](docs/railway-deploy-zh.md) for setup, data import, and the known AI log-collection limitation across separate service filesystems. Record actual acceptance evidence in the Week 07 milestone document.
+Backend settings such as `FIX_DATABASE_URL`, `FIX_AI_URL`, and `FIX_ALLOWED_ORIGINS` belong in the relevant service environments; database credentials must never be placed in browser configuration.
+
+### Railway verification still to record
+
+The status here describes the available evidence; it does not assert that no Railway services have been deployed. Follow the [Railway guide](docs/railway-deploy-zh.md), then record the hosted URL, tested Git SHA, test date, and evidence of:
+
+- API and AI readiness, with a current worker heartbeat.
+- An accepted request creating persisted Run/Job records in PostgreSQL.
+- The worker completing real inference and saving results.
+- A saved review that can be retrieved again, without changing inventory.
+- Correlated execution logs and the actual coverage of each service.
+
+The current file-based AI log collector does not span separate Railway service filesystems. Report that coverage gap until a shared collection mechanism is implemented and verified. Add hosted results to `submissions/week07/README.md` and update this summary after acceptance; preserve local reproduction instructions as a separate way to run the project.
 
 ## Repository guide
 
