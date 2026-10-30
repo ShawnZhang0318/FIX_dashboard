@@ -25,6 +25,8 @@ The current local demo is available at:
 - [Analysis page](http://127.0.0.2:5174/#/analysis)
 - [Inventory page](http://127.0.0.2:5174/#/inventory)
 
+**Online fallback:** If the local demo cannot be started or accessed, view the version deployed on our server at [fixdashboard-production.up.railway.app](https://fixdashboard-production.up.railway.app/).
+
 1. Open Inventory and show the 20 S001 products loaded from the local SQLite database.
 2. Open Analysis, select `2024-01-01`, and choose **Run Daily Analysis**.
 3. Follow the saved Run and Job status until the analysis completes. Inspect the forecast results, cutoff snapshots, model version, and input references.
