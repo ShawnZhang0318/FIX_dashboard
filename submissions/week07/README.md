@@ -17,18 +17,18 @@ The local demo implements an end-to-end advisory workflow for store S001 and its
 
 The dashboard provides Inventory, Analysis, Exceptions, snapshot transfer, and backend log pages in English and Simplified Chinese. A planner can inspect forecasts and provenance, record a review decision, and retrieve that decision later. Reviewing a case does not update inventory or place a purchase order.
 
-The model forecasts cumulative realized sales over each product's simulated supplier lead time. `Demand Forecast` from the source CSV is excluded from model inputs.
+The model forecasts cumulative realized sales over each product's simulated supplier lead time. `Demand Forecast` from the source CSV is excluded from model inputs. 
 
 ## 2. Live Demo Sequence
 
 The current local demo is available at:
-- [Analysis page](http://127.0.0.2:5174/#/analysis)
-- [Inventory page](http://127.0.0.2:5174/#/inventory)
+- [Analysis page](http://127.0.0.1:5174/#/analysis)
+- [Inventory page](http://127.0.0.1:5174/#/inventory)
 
 **Online fallback:** If the local demo cannot be started or accessed, view the version deployed on our server at [fixdashboard-production.up.railway.app](https://fixdashboard-production.up.railway.app/).
 
 1. Open Inventory and show the 20 S001 products loaded from the local SQLite database.
-2. Open Analysis, select `2024-01-01`, and choose **Run Daily Analysis**.
+2. Open Analysis, select `2023-11-15`, and choose **Run Daily Analysis**.
 3. Follow the saved Run and Job status until the analysis completes. Inspect the forecast results, cutoff snapshots, model version, and input references.
 4. Open an exception case, submit a review, and reload the case to confirm the decision was saved.
 5. Confirm that inventory is unchanged after the review.
@@ -73,10 +73,10 @@ The current local database defaults to `.local-integration/fix.sqlite3`. Postgre
 ## 5. Current Evidence of Integration
 
 - **Database write path:** The importer verified the source CSV and reported `14620` verified rows and `14620` inserted rows. The inventory API returns 20 S001 products.
-- **API path:** The dashboard's live adapter calls the public API. In the current session, the API is running on `http://127.0.0.1:8002`; a browser-origin request from `http://127.0.0.2:5174` returned HTTP 200 with the configured CORS origin.
+- **API path:** The dashboard's live adapter calls the public API. In the current session, the API is running on `http://127.0.0.1:8002`; a browser-origin request from `http://127.0.0.1:5174` returned HTTP 200 with the configured CORS origin.
 - **Worker path:** API readiness reports the database available and worker available.
 - **AI path:** The private AI service on port `8001` reports readiness `ok` with the versioned model loaded.
-- **Dashboard path:** The local Vite preview returned HTTP 200 at `http://127.0.0.2:5174/`.
+- **Dashboard path:** The local Vite preview returned HTTP 200 at `http://127.0.0.1:5174/`.
 - **Persistence and logs:** Local business records are stored in `.local-integration/fix.sqlite3`; application and process logs are written under `.local-integration/`.
 
 ## 6. Testing / Verification Performed
@@ -127,4 +127,4 @@ The repository includes `scripts/verify-local-demo.mjs` for a live-flow acceptan
 
 ## 10. AI Use Statement
 
-OpenAI Codex was used to inspect the project code and documentation, start the local demo services, and draft this milestone summary.
+OpenAI Codex was used to inspect the project code and documentation, start the local demo services, and draft this milestone summary. 
