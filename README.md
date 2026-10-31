@@ -33,8 +33,6 @@ Each required document has a separate purpose; this README is the project entry 
 | [Operations guide](docs/operations.md) | Running, monitoring, troubleshooting, and operating the system. |
 | [Week 07 milestone](submissions/week07/README.md) | Demonstrated system path, milestone evidence, current status, remaining work, risks, and reproduction instructions. |
 
-**Checkpoint status (2026-10-30):** The root README, `docs/architecture.md`, and `docs/operations.md` are available in this repository. `submissions/week07/README.md` is still pending. Ensure all four required documents are available in the commit tagged `w07-midterm`.
-
 Existing supporting documentation:
 
 - [Local integration and startup guide — Chinese](docs/local-integration-zh.md)
@@ -42,8 +40,6 @@ Existing supporting documentation:
 - [Public API contract](docs/frontend-api-contract.md) and [backend logs contract](docs/backend-logs-contract.md)
 - [AI model documentation](ai/README.md)
 - [Original Week 04 architecture reference](docs/w04-reference/docs/architecture.md)
-
-Milestone screenshots, sample outputs, and captured logs should be indexed in the Week 07 document, with supporting files under `submissions/week07/assets/` as needed.
 
 ## Technology overview
 
@@ -66,6 +62,8 @@ Milestone screenshots, sample outputs, and captured logs should be indexed in th
 - Windows PowerShell, with ports **5174**, **8000**, and **8001** available.
 
 The following commands start the real local stack and use the default SQLite database. Leave `FIX_DATABASE_URL` unset for this setup. The API, worker, and AI service must all be running; opening only the frontend does not start them. The supplied start/stop scripts are Windows-specific; hosted deployment is documented separately.
+
+**Week 07 demonstration baseline:** use `http://127.0.0.1:5174/FIX_dashboard/`, store **S001**, and analysis date **2023-11-15**, matching the presentation and recorded local results. The public API is on port **8000** and the private AI service on **8001**. Alternate addresses or ports from an individual test session require their own configuration notes; they do not replace this standard startup procedure. Validate input coverage and saved results before using a different demonstration date.
 
 ### 1. Get the repository and install dependencies
 
@@ -127,7 +125,7 @@ To restart, repeat step 2 in the project directory. Do not start a second copy w
 | --- | --- | --- |
 | Local real-model integration | Actual HTTP API, separate worker, trained LightGBM model, and SQLite persistence by default | Historical local acceptance is recorded above. Re-run against the checkpoint revision for milestone evidence. |
 | Mock interface demo / default static preview | Synthetic fixtures and browser storage; no model inference or server database | Useful for interface/workflow previews; not backend integration evidence. |
-| Railway / hosted PostgreSQL integration | Hosted frontend connects to a public API; API/worker share PostgreSQL and the worker calls private AI | Database adapter, Dockerfiles, and setup guidance exist. End-to-end cloud acceptance is not established by the evidence linked in this README. |
+| Railway online fallback / hosted integration | Intended hosted path: frontend to public API, shared PostgreSQL for API/worker, and worker to private AI | Listed as an online fallback in the milestone. Cloud acceptance is partial; deployment availability does not establish a verified end-to-end hosted workflow. |
 
 The [GitHub Pages preview](https://shawnzhang0318.github.io/FIX_dashboard/) uses mock mode with the repository's default static configuration unless a hosted API URL is supplied. GitHub Pages itself hosts no Python services or database.
 
@@ -135,9 +133,11 @@ The integrated dashboard's [runtime configuration](public/runtime-config.js) sel
 
 Backend settings such as `FIX_DATABASE_URL`, `FIX_AI_URL`, and `FIX_ALLOWED_ORIGINS` belong in the relevant service environments; database credentials must never be placed in browser configuration.
 
-### Railway verification still to record
+### Railway fallback and partial cloud acceptance
 
-The status here describes the available evidence; it does not assert that no Railway services have been deployed. Follow the [Railway guide](docs/railway-deploy-zh.md), then record the hosted URL, tested Git SHA, test date, and evidence of:
+The team lists [the Railway site](https://fixdashboard-production.up.railway.app/) as an **online fallback** in the milestone document. Report **partial cloud acceptance**: the existence of a deployed frontend or URL does not confirm that PostgreSQL persistence, worker execution, model inference, review retrieval, and log collection all passed together. A fallback showing mock data is evidence of the interface only. This documentation review did not perform a new hosted acceptance run.
+
+Follow the [Railway guide](docs/railway-deploy-zh.md) and record the tested Git SHA, test date, service configuration, and evidence of:
 
 - API and AI readiness, with a current worker heartbeat.
 - An accepted request creating persisted Run/Job records in PostgreSQL.
@@ -160,7 +160,7 @@ The current file-based AI log collector does not span separate Railway service f
 | `scripts/` | Local startup, shutdown, and end-to-end verification helpers |
 | `deploy/` | Dockerfiles for API, worker, and AI services |
 | `docs/` | Design, interface, deployment, and operational documentation |
-| `submissions/week07/` | Required destination for the Week 07 evidence index and supporting artifacts; pending creation |
+| `submissions/week07/` | Existing Week 07 milestone README and evidence index; screenshot and slide links still need finalization |
 
 ## Development checks
 
@@ -173,4 +173,4 @@ npm run build
 
 Python tests are located in `ai/tests/`, `ai/integration_tests/`, `integration/tests/`, and `local_backend/tests/`. The [local integration guide](docs/local-integration-zh.md) describes their execution and the dedicated database requirement for PostgreSQL tests. Run tests against disposable test storage, not shared demonstration or production data.
 
-Use `src/` for the integrated team dashboard; the standalone HTML demo under `frontend/` is retained as a reference. See the [Week 07 milestone document](submissions/week07/README.md) for the checkpoint-specific reproduction procedure and recorded results once it is added.
+Use `src/` for the integrated team dashboard; the standalone HTML demo under `frontend/` is retained as a reference. See the [Week 07 milestone document](submissions/week07/README.md) for checkpoint evidence. Use the standard address, ports, and date in this quick start for reproduction, and align the milestone's demo sequence with these settings before submission.

@@ -4,19 +4,19 @@
 
 Adapted from the [course operations template](https://github.com/aryansethi21052001/maie6000c/blob/main/docs/operations.md), using its six operational topics and commands supported by Project F.I.X.
 
-**Implementation reference:** `61a015ff4094c15fb1333cd375d3daca0f41e830`, inspected on 2026-10-30. Commands use **Windows PowerShell from the repository root**. See the [root README](../README.md) for installation and [architecture](architecture.md) for design. Record actual demonstrations and evidence in [submissions/week07/README.md](../submissions/week07/README.md), which is still pending at this revision.
+**Implementation reference:** `492ee212004c5ec2c1fee8bebcee66581f04adfe`, inspected on 2026-10-31. Commands use **Windows PowerShell from the repository root**. See the [root README](../README.md) for installation and [architecture](architecture.md) for design. The [Week 07 milestone README](../submissions/week07/README.md) now exists; use its [artifact index](../submissions/week07/README.md#9-artifact-index) for actual screenshots, slides, and execution evidence. Its screenshot and slide references still need usable links at this revision. Keep document availability separate from evidence completeness.
 
 ## Local startup
 
 **Execution mode:** these steps run real FastAPI and AI services, a separate worker, and persistent storage. The integrated dashboard selects `live` mode on localhost/127.0.0.1 and calls `http://127.0.0.1:8000`; it does not switch to mock data if the backend is unavailable. Starting only the frontend is insufficient. The separate mock mode uses synthetic fixtures and browser storage.
 
-**Verification scope:** the [README's current-status summary](../README.md#currently-works-local-integration) distinguishes historical local acceptance from hosted acceptance still to be recorded. Local success establishes the tested local path; cloud deployment requires its own recorded health, database, worker, result/review, and log checks.
+**Verification scope:** the [README's current-status summary](../README.md#currently-works-local-integration) records historical local acceptance. Railway is an online fallback with partial cloud acceptance; the complete hosted path still needs recorded health, database, worker, result/review, and log checks. This documentation revision does not claim a fresh local or hosted acceptance run.
+
+**Standard demonstration settings:** dashboard `http://127.0.0.1:5174/FIX_dashboard/`, public API `http://127.0.0.1:8000`, private AI `http://127.0.0.1:8001`, store **S001**, and analysis date **2023-11-15**. These match the README, presentation date, and historical results. Reproduce these settings consistently; document any alternate session configuration separately and verify a new date before changing the demonstration.
 
 ### 1. Prepare the environment
 
 Complete the [README prerequisites and installation](../README.md#quick-start-local-model-demo-on-windows): install frontend dependencies, create `.venv-model` using Python 3.12, and install `ai/requirements-dev.txt`.
-
-The local demo uses PowerShell scripts and SQLite by default. It does not provide the template's Docker Compose stack or `.env.example` setup. Configure the current shell before starting:
 
 | Setting | Use |
 | --- | --- |
@@ -91,7 +91,7 @@ Invoke-RestMethod "$apiBase/analysis-runs/$runId/results" | ConvertTo-Json -Dept
 
 For a successful full-store run, check `processed_count = expected_count = 20`, `partial = false`, and 20 persisted results. Intermediate states may finish before the next poll; correlated logs retain the processing events. Open an exception and save a review after completion. Reviews are advisory and do not change stock or place orders.
 
-Hosted operation uses separate API, worker, AI, and PostgreSQL services; follow the [Railway guide](railway-deploy-zh.md) and [hosted verification checklist](../README.md#railway-verification-still-to-record). GitHub Pages uses mock mode under the default static configuration unless a hosted API URL is supplied. A loaded page or `Live API` badge alone does not establish backend readiness. Report the observed hosted status and log coverage, with its URL, tested commit, and date, separately from local acceptance.
+For the team's [Railway online fallback](https://fixdashboard-production.up.railway.app/), follow the [Railway guide](railway-deploy-zh.md) and [hosted verification checklist](../README.md#railway-fallback-and-partial-cloud-acceptance). The intended hosted system has separate API, worker, AI, and PostgreSQL services. GitHub Pages uses mock mode under the default static configuration unless a hosted API URL is supplied. Record actual hosted results and log coverage, with the tested commit and date, separately from local acceptance.
 
 ## Health endpoints
 
@@ -160,7 +160,7 @@ This targets `http://127.0.0.1:8000`, creates a real analysis and advisory revie
 
 ### Apply migrations and seed data
 
-API/worker startup initializes storage. PostgreSQL applies missing numbered SQL files in [local_backend/migrations](../local_backend/migrations), currently **001 and 002**, under an advisory lock and records versions in `schema_migrations`. SQLite initializes its own tables. This project does not use Alembic.
+API/worker startup initializes storage. PostgreSQL uses a database lock to coordinate migrations, applies missing numbered SQL files in [local_backend/migrations](../local_backend/migrations), currently **001 and 002**, and records versions in `schema_migrations`. SQLite initializes its own tables. This project does not use Alembic.
 
 Inspect PostgreSQL versions from an authorized database client:
 
