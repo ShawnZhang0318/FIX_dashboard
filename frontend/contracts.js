@@ -156,6 +156,20 @@ export function validateResponse(operation, data, args = []) {
     unique(data.results, x => x.id, 'results.id (duplicate)');
     unique(data.results, x => `${x.store_id}/${x.product_id}`, 'results.product_id (duplicate)');
     if (data.status === 'failed' && data.results.length) check(data.partial, 'results.partial');
+    if (data.diagnostics != null) {
+      const scan = data.diagnostics;
+      object(scan, 'diagnostics');
+      member(scan.mode, ['daily', 'monthly'], 'diagnostics.mode');
+      text(scan.policy_version, 'diagnostics.policy_version');
+      object(scan.products, 'diagnostics.products');
+      for (const [product, findings] of Object.entries(scan.products)) {
+        object(findings, `diagnostics.${product}`);
+        for (const [signal, finding] of Object.entries(findings)) {
+          object(finding, `diagnostics.${product}.${signal}`);
+          member(finding.status, ['normal', 'anomaly', 'inventory_limited', 'insufficient_data'], 'diagnostics.status');
+        }
+      }
+    }
   } else if (operation === 'getExceptions') {
     array(data, 'exceptions', (x, p) => {
       exception(x, p, null, first?.run_id);
@@ -179,6 +193,12 @@ export function validateResponse(operation, data, args = []) {
 export function validateRunResults(run, results) {
   check(results.status === run.status && results.partial === run.partial, 'results.run_state');
   check(results.results.length === run.processed_count, 'results.processed_count');
+  if (results.diagnostics != null) {
+    const scan = results.diagnostics;
+    check(scan.mode === run.run_type && scan.store_id === run.store_id &&
+      scan.as_of_date === run.as_of_date && scan.input_reference === run.input_reference,
+      'diagnostics.run_identity');
+  }
   for (const row of results.results) {
     check(row.analysis_run_id === run.id && row.store_id === run.store_id, 'results.run_identity');
     if (row.snapshot_date != null) check(row.snapshot_date === run.as_of_date, 'results.snapshot_date');

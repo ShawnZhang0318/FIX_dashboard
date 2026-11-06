@@ -43,7 +43,7 @@ class SnapshotBatch(Strict):
 
 class RunRequest(Strict):
     store_id: Literal["S001"]
-    run_type: Literal["daily"]
+    run_type: Literal["daily", "monthly"]
     as_of_date: date
 
 

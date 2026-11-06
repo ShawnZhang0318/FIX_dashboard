@@ -11,6 +11,7 @@ from fastapi import FastAPI, HTTPException, Request, Query
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
+from ai.diagnostics import POLICY_VERSION
 from local_backend import storage as s
 from local_backend.schemas import SnapshotBatch, RunRequest, Review
 
@@ -139,24 +140,31 @@ def ingest(payload: SnapshotBatch, request: Request):
 @app.post("/analysis-runs", status_code=202)
 def create_run(payload: RunRequest, request: Request):
     cutoff = payload.as_of_date.isoformat()
-    if cutoff < s.MANIFEST["earliest_honest_backtest_origin"]:
+    daily = payload.run_type == "daily"
+    if daily and cutoff < s.MANIFEST["earliest_honest_backtest_origin"]:
         raise HTTPException(422, "This trained/calibrated model requires a cutoff on or after 2023-09-01")
     with s.connect() as db:
         s.begin_write(db)
         current = list(db.execute("SELECT * FROM snapshots WHERE store_id=? AND snapshot_date=? ORDER BY product_id",
                                   (payload.store_id, cutoff)))
-        if {r["product_id"] for r in current} != set(s.MANIFEST["product_id_categories"]):
+        if daily and {r["product_id"] for r in current} != set(s.MANIFEST["product_id_categories"]):
             raise HTTPException(422, "Cutoff requires snapshots for all 20 products in S001")
+        if not current:
+            raise HTTPException(422, "No snapshots for this cutoff")
+        first_day = str(payload.as_of_date - timedelta(days=28 if daily else 55))
+        histories = {product: [] for product in s.MANIFEST["product_id_categories"]}
+        for row in db.execute("""SELECT id,product_id,snapshot_date,source_sha256 FROM snapshots
+            WHERE store_id=? AND snapshot_date BETWEEN ? AND ? ORDER BY snapshot_date""",
+                              (payload.store_id, first_day, cutoff)):
+            histories[row["product_id"]].append(dict(row))
         selected = []
-        for row in current:
+        for row in current if daily else ():
             data = s.row_data(row)
             previous = db.execute("SELECT data FROM snapshots WHERE store_id=? AND product_id=? AND snapshot_date=?",
                                   (payload.store_id, row["product_id"], str(payload.as_of_date-timedelta(days=1)))).fetchone()
             if data["units_sold"] == 0 and previous and data["inventory_level"] == s.row_data(previous)["inventory_level"]:
                 continue
-            history = list(db.execute("""SELECT id,snapshot_date,source_sha256 FROM snapshots
-              WHERE store_id=? AND product_id=? AND snapshot_date BETWEEN ? AND ? ORDER BY snapshot_date""",
-              (payload.store_id, row["product_id"], str(payload.as_of_date-timedelta(days=28)), cutoff)))
+            history = histories[row["product_id"]]
             expected = {str(payload.as_of_date-timedelta(days=n)) for n in range(29)}
             if {r["snapshot_date"] for r in history} != expected:
                 raise HTTPException(422, f"{row['product_id']}: requires 29 consecutive daily snapshots; no cold-start fallback")
@@ -169,6 +177,8 @@ def create_run(payload: RunRequest, request: Request):
                   "products": selected, "policy": s.POLICY, "model_version": s.MANIFEST["model_version"],
                   "feature_schema_version": s.MANIFEST["feature_schema_version"],
                   "model_manifest_sha256": s.hashlib.sha256((s.MODEL_DIR/"manifest.json").read_bytes()).hexdigest(),
+                  "diagnostics_mode": payload.run_type, "diagnostics_policy_version": POLICY_VERSION,
+                  "diagnostics_history": histories,
                   "request_id": request.state.request_id}
         data = {"id": run_id, **payload.model_dump(mode="json"), "created_at": now, "started_at": None,
                 "completed_at": None, "processed_count": 0, "expected_count": len(selected), "partial": False,
@@ -192,6 +202,7 @@ def results(run_id: str):
         db.execute("BEGIN")
         run = require(s.run_data(db, run_id))
         return {"status": run["status"], "partial": run["partial"],
+                "diagnostics": run.get("diagnostics"),
                 "results": [s.row_data(r) for r in db.execute("SELECT data FROM results WHERE run_id=? ORDER BY product_id", (run_id,))]}
 
 
