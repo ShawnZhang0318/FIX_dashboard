@@ -4,6 +4,8 @@ import os
 from concurrent.futures import ThreadPoolExecutor
 import pytest
 from fastapi.testclient import TestClient
+from ai.diagnostics import diagnose
+from ai.schemas import DiagnosticsRequest
 from local_backend import storage as s, worker
 from local_backend.service import app
 
@@ -42,8 +44,8 @@ def seed():
         s.ingest(db, rows, "a"*64)
 
 
-def create(api):
-    response = api.post("/analysis-runs", json={"store_id": "S001", "run_type": "daily", "as_of_date": str(CUTOFF)},
+def create(api, mode="daily"):
+    response = api.post("/analysis-runs", json={"store_id": "S001", "run_type": mode, "as_of_date": str(CUTOFF)},
                         headers={"X-Request-ID": "flow-test"})
     assert response.status_code == 202, response.text
     return response.json()["analysis_run"]["id"]
@@ -63,6 +65,9 @@ class StubAI:
                 "predicted_demand_p50": 100.0, "predicted_demand_p90": 200.0,
                 "model_version": s.MANIFEST["model_version"], "feature_schema_version": "features-v1",
                 "input_reference": kwargs["input_reference"]}
+
+    def diagnostics(self, mode, request, **kwargs):
+        return json.loads(json.dumps(diagnose(DiagnosticsRequest.model_validate(request), mode), default=str))
 
 
 @pytest.mark.skipif(not os.environ.get("FIX_TEST_POSTGRES_URL"),
@@ -125,7 +130,6 @@ def test_atomic_ingestion_duplicate_rollback_and_historical_current_view(api):
 
 def test_coverage_and_model_cutoff(api):
     assert api.post("/analysis-runs", json={"store_id": "S001", "run_type": "daily", "as_of_date": "2022-06-30"}).status_code == 422
-    assert api.post("/analysis-runs", json={"store_id": "S001", "run_type": "monthly", "as_of_date": str(CUTOFF)}).status_code == 422
     assert api.post("/analysis-runs", json={"store_id": "S002", "run_type": "daily", "as_of_date": str(CUTOFF)}).status_code == 422
     assert api.post("/analysis-runs", json={"store_id": "S001", "run_type": "daily", "as_of_date": str(CUTOFF)}).status_code == 422
     seed()
@@ -214,8 +218,8 @@ def test_log_pagination_export_stable_and_correlated(api):
 
 
 def test_zero_daily_selection_is_success_without_model_call(api):
-    rows = [snapshot(product, day, stock=100, sales=0) for product in s.MANIFEST["product_id_categories"]
-            for day in (CUTOFF-timedelta(days=1), CUTOFF)]
+    rows = [snapshot(product, CUTOFF-timedelta(days=n), stock=0 if product == "P0001" else 100, sales=0)
+            for product in s.MANIFEST["product_id_categories"] for n in range(3)]
     with s.connect() as db:
         s.ingest(db, rows, "a"*64)
     run_id = create(api)
@@ -224,6 +228,28 @@ def test_zero_daily_selection_is_success_without_model_call(api):
     run = api.get(f"/analysis-runs/{run_id}").json()
     assert run["status"] == "completed" and run["expected_count"] == run["processed_count"] == 0
     assert model.calls == []
+    findings = api.get(f"/analysis-runs/{run_id}/results").json()["diagnostics"]["products"]
+    assert len(findings) == 20
+    assert findings["P0001"]["persistent_zero_stock"]["status"] == "anomaly"
+
+
+def test_monthly_saves_full_scan_without_forecast_calls(api):
+    rows = [snapshot(product, CUTOFF-timedelta(days=n),
+                     sales=20 if product == "P0001" and n < 28 else 10)
+            for product in s.MANIFEST["product_id_categories"]
+            for n in range(56 if product == "P0001" else 1)]
+    with s.connect() as db:
+        s.ingest(db, rows, "a"*64)
+    run_id = create(api, "monthly")
+    model = StubAI()
+    worker.process(worker.claim(), model)
+    result = api.get(f"/analysis-runs/{run_id}/results").json()
+    assert result["status"] == "completed"
+    assert result["results"] == model.calls == []
+    findings = result["diagnostics"]["products"]
+    assert len(findings) == 20
+    assert findings["P0001"]["persistent_high_sales"]["status"] == "anomaly"
+    assert findings["P0002"]["long_stockout"]["status"] == "insufficient_data"
 
 
 @pytest.mark.parametrize("stock,kind,decision", [(150,"reorder_and_anomaly","approve"), (500,"anomaly","resolve")])

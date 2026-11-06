@@ -1,6 +1,7 @@
 """Worker -> private AI transport. Never import this module in browser code."""
 from datetime import date
 import json
+import math
 from pathlib import Path
 
 import httpx
@@ -23,6 +24,37 @@ class WorkerAIClient:
 
     def close(self):
         self.client.close()
+
+    def diagnostics(self, mode, request, *, policy_version, run_id, job_id, request_id):
+        signals = ({"high_sales", "persistent_zero_stock"} if mode == "daily"
+                   else {"persistent_high_sales", "persistent_low_sales", "long_stockout"})
+        headers = {"X-Run-ID": run_id, "X-Job-ID": job_id,
+                   "X-Request-ID": request_id, "X-Trace-ID": run_id}
+        try:
+            response = self.client.post(f"/diagnostics/{mode}", json=request, headers=headers)
+            response.raise_for_status()
+            result = response.json()
+            expected = {key: request[key] for key in ("store_id", "as_of_date", "input_reference")}
+            expected.update(mode=mode, policy_version=policy_version)
+            if any(result.get(key) != value for key, value in expected.items()):
+                raise ValueError("Diagnostics response identity or policy mismatch")
+            if set(result["products"]) != set(self.manifest["product_id_categories"]):
+                raise ValueError("Diagnostics response does not cover the model catalog")
+            for findings in result["products"].values():
+                if set(findings) != signals:
+                    raise ValueError("Diagnostics response signals do not match the scan mode")
+                for finding in findings.values():
+                    if finding["status"] not in ("normal", "anomaly", "inventory_limited", "insufficient_data"):
+                        raise ValueError("Invalid diagnostic finding status")
+                high_sales = findings.get("high_sales")
+                if high_sales and high_sales["status"] in ("normal", "anomaly"):
+                    for key in ("baseline", "threshold"):
+                        value = high_sales[key]
+                        if type(value) not in (int, float) or not math.isfinite(value) or value < 0:
+                            raise ValueError("Invalid daily sales diagnostic evidence")
+            return result
+        except (httpx.HTTPError, ValueError, KeyError, TypeError, AttributeError) as exc:
+            raise ModelCallError(f"Private AI diagnostics failed: {exc}") from exc
 
     def predict(self, history, *, store_id, product_id, as_of_date, input_reference,
                 run_id=None, job_id=None, request_id=None):

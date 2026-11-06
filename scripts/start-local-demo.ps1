@@ -3,6 +3,9 @@ $ErrorActionPreference = 'Stop'
 $repo = Split-Path -Parent $PSScriptRoot
 $stateDir = Join-Path $repo '.local-integration'
 $python = Join-Path $repo '.venv-model\Scripts\python.exe'
+if (!(Test-Path -LiteralPath $python)) {
+    $python = Join-Path $repo '.venv\Scripts\python.exe'
+}
 if (!(Test-Path -LiteralPath $python)) { throw 'First create .venv-model and install ai/requirements-dev.txt; see docs/local-integration-zh.md.' }
 New-Item -ItemType Directory -Path $stateDir -Force | Out-Null
 $env:FIX_LOCAL_STATE = $stateDir
@@ -46,5 +49,5 @@ foreach ($service in $services) {
     $started | ConvertTo-Json | Set-Content -LiteralPath $pidFile -Encoding utf8
 }
 Write-Output 'Local services launched. Check http://127.0.0.1:8001/health/ready and http://127.0.0.1:8000/health/ready.'
-Write-Output 'First run: .\.venv-model\Scripts\python.exe -m local_backend.import_csv'
+Write-Output "First run: & '$python' -m local_backend.import_csv"
 Write-Output 'Dashboard: http://127.0.0.1:5174/FIX_dashboard/#/analysis'

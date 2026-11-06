@@ -12,6 +12,9 @@ import {
   runPath,
   queuePath,
 } from "../workflow.js";
+
+const units = (value) => number(Number.isFinite(value) ? Math.ceil(value) : null);
+
 export default function AnalysisPage() {
   const { runId } = useParams();
   return <AnalysisWorkspace key={runId || "new"} runId={runId} />;
@@ -21,6 +24,7 @@ function AnalysisWorkspace({ runId }) {
     navigate = useNavigate();
   const [date, setDate] = useState(config.mode === "mock" ? "2022-06-30" : config.defaultAnalysisDate || ""),
     [scenario, setScenario] = useState("success");
+  const [mode, setMode] = useState("daily");
   const [run, setRun] = useState(null),
     [results, setResults] = useState(null),
     [error, setError] = useState(null),
@@ -50,6 +54,7 @@ function AnalysisWorkspace({ runId }) {
           throw Error("Unsupported run status: " + r.status);
         setRun(r);
         setDate(r.as_of_date);
+        if (r.run_type) setMode(r.run_type);
         if (r.scenario) setScenario(r.scenario);
         if (["queued", "processing"].includes(r.status)) {
           timer = setTimeout(poll, config.pollMs);
@@ -82,7 +87,7 @@ function AnalysisWorkspace({ runId }) {
     try {
       const data = await api.createAnalysisRun({
         store_id: "S001",
-        run_type: "daily",
+        run_type: mode,
         as_of_date: date,
         scenario,
       });
@@ -107,7 +112,7 @@ function AnalysisWorkspace({ runId }) {
       <div className="analysis-grid">
         <section className="panel request-panel">
           <div className="panel-heading">
-            <h2>{t("Run daily analysis")}</h2>
+            <h2>{t(mode === "monthly" ? "Run Monthly Scan" : "Run daily analysis")}</h2>
           </div>
           <form onSubmit={create}>
             <div className="request-fields">
@@ -115,6 +120,16 @@ function AnalysisWorkspace({ runId }) {
                 {t("Store")}
                 <input className="field-value" disabled value="S001" />
               </label>
+              {config.mode !== "mock" && (
+                <label className="field-group">
+                  {t("Analysis type")}
+                  <select className="field-value" value={mode} disabled={running || busy}
+                          onChange={(e) => setMode(e.target.value)}>
+                    <option value="daily">{t("Daily analysis")}</option>
+                    <option value="monthly">{t("Monthly full scan")}</option>
+                  </select>
+                </label>
+              )}
               <label className="field-group">
                 {t("Analysis date")}
                 <input
@@ -123,7 +138,7 @@ function AnalysisWorkspace({ runId }) {
                   required
                   value={date}
                   disabled={running || busy}
-                  min={config.mode === "mock" ? "2022-06-30" : config.minimumAnalysisDate}
+                  min={config.mode === "mock" ? "2022-06-30" : mode === "daily" ? config.minimumAnalysisDate : undefined}
                   max={config.mode === "mock" ? "2022-06-30" : undefined}
                   onChange={(e) => setDate(e.target.value)}
                 />
@@ -153,7 +168,7 @@ function AnalysisWorkspace({ runId }) {
                     ? "Creating…"
                     : running
                       ? "Analysis in progress"
-                      : "Run Daily Analysis",
+                      : mode === "monthly" ? "Run Monthly Scan" : "Run Daily Analysis",
                 )}
               </button>
             </div>
@@ -177,10 +192,10 @@ function AnalysisWorkspace({ runId }) {
                       {run.as_of_date} · {run.store_id}
                     </p>
                     <p className="workflow-id">{t("Job ID")}: {run.job.id} · {t(run.job.status)}</p>
-                    <p>
+                    {run.run_type !== "monthly" && <p>
                       {t("Products processed")}: {number(run.processed_count)} /{" "}
                       {number(run.expected_count)}
-                    </p>
+                    </p>}
                     {run.error && (
                       <p role="alert">
                         {typeof run.error === "string"
@@ -210,15 +225,97 @@ function AnalysisWorkspace({ runId }) {
           </div>
         </section>
       </div>
-      {results && <Results data={results} runId={runId} />}
+      {results?.diagnostics && <Diagnostics scan={results.diagnostics} />}
+      {results && (run?.run_type !== "monthly" || results.status === "failed") &&
+        <Results data={results} runId={runId} />}
     </>
+  );
+}
+function Diagnostics({ scan }) {
+  const { t } = useLanguage();
+  const monthly = scan.mode === "monthly";
+  const rows = Object.entries(scan.products);
+  const flagged = rows.map(([product, findings]) => [
+    product, Object.entries(findings).filter(([, finding]) => finding.status === "anomaly"),
+  ]).filter(([, findings]) => findings.length);
+  const count = (status) => rows.filter(([, findings]) =>
+    Object.values(findings).some((finding) => finding.status === status)).length;
+  const incomplete = count("insufficient_data");
+  const limited = count("inventory_limited");
+
+  return (
+    <section className="panel inventory-panel">
+      <div className="panel-heading">
+        <h2>{t(monthly ? "Monthly full scan" : "Daily diagnostics")}</h2>
+        <span>{flagged.length} / {rows.length} {t("SKUs flagged")}</span>
+      </div>
+      <div className="workflow-body diagnostic-body">
+        {monthly && (
+          <div className="diagnostic-context">
+            <div>{t("Recent 28 days")}: {scan.recent_start} – {scan.as_of_date}</div>
+            <div>{t("Previous 28 days")}: {scan.reference_start} – {scan.reference_end}</div>
+          </div>
+        )}
+        {flagged.length ? (
+          <ul className="diagnostic-alert-list">
+            {flagged.map(([product, findings]) => (
+              <li key={product}>
+                <h3>{product}</h3>
+                {findings.map(([signal, finding]) => (
+                  <DiagnosticFinding key={signal} signal={signal} finding={finding} />
+                ))}
+              </li>
+            ))}
+          </ul>
+        ) : <p>{t("No anomalies detected in available data.")}</p>}
+        {(!!incomplete || !!limited) && (
+          <div className="diagnostic-context">
+            {!!incomplete && <div>{t("SKUs with incomplete checks")}: {incomplete}</div>}
+            {!!limited && <div>{t("SKUs with stock-limited sales checks")}: {limited}</div>}
+          </div>
+        )}
+      </div>
+    </section>
+  );
+}
+
+function DiagnosticFinding({ signal, finding }) {
+  const { t } = useLanguage();
+  let evidence;
+  if (signal === "high_sales") {
+    evidence = [
+      ["28-day daily average", units(finding.baseline)],
+      ["Today’s sales", units(finding.observed)],
+    ];
+  } else if (signal === "persistent_zero_stock") {
+    evidence = [["Consecutive zero-stock days",
+      `${finding.lower_bound ? "≥ " : ""}${number(finding.observed)}`]];
+  } else if (signal === "long_stockout") {
+    evidence = [
+      ["Zero-stock days (recent / previous)", `${number(finding.recent?.zero_days)} / ${number(finding.reference?.zero_days)}`],
+      ["Recent stockout episodes", number(finding.recent?.periods)],
+      ["Longest recent stockout (days)", number(finding.recent?.longest_streak)],
+    ];
+  } else {
+    evidence = [
+      ["Previous daily sales average", units(finding.reference_mean)],
+      ["Recent daily sales average", units(finding.recent_mean)],
+      ["Comparable weeks with this trend", `${number(finding.matching_weeks)} / ${number(finding.comparable_weeks)}`],
+    ];
+  }
+  return (
+    <div className="diagnostic-finding">
+      <strong>{t(signal === "high_sales" ? "Exceptionally high sales" : signal)}</strong>
+      {evidence.map(([label, value]) => <div key={label}>{t(label)}: {value}</div>)}
+    </div>
   );
 }
 function Results({ data, runId }) {
   const { t } = useLanguage(),
     rows = data.results;
-  const total = rows.every((x) => Number.isFinite(x.recommended_order_quantity))
-    ? rows.reduce((s, x) => s + x.recommended_order_quantity, 0)
+  const exceptions = rows.filter((x) => x.case_id);
+  const total = exceptions.every((x) => Number.isFinite(x.recommended_order_quantity))
+    ? exceptions.reduce((s, x) => s + Math.ceil(x.recommended_order_quantity), 0)
     : null;
   return (
     <>
@@ -231,10 +328,10 @@ function Results({ data, runId }) {
       )}
       <div className="summary-grid">
         <Metric label={t("Products processed")} value={rows.length} />
-        <Metric label={t("Suggested quantity")} value={number(total)} />
+        <Metric label={t("Suggested quantity")} value={units(total)} />
         <Metric
           label={t("Exceptions")}
-          value={rows.filter((x) => x.case_id).length}
+          value={exceptions.length}
         />
       </div>
       <section className="panel inventory-panel">
@@ -252,8 +349,7 @@ function Results({ data, runId }) {
                   "Product ID",
                   "On hand",
                   "Forecast horizon",
-                  "Demand forecast",
-                  "Safety stock",
+                  "Demand forecast (P90)",
                   "Suggested quantity",
                   "Decision",
                 ].map((x) => (
@@ -262,45 +358,28 @@ function Results({ data, runId }) {
               </tr>
             </thead>
             <tbody>
-              {rows.map((x) => (
+              {exceptions.map((x) => (
                 <tr key={x.id}>
                   <td>{x.product_id}</td>
-                  <td>{number(x.inventory_at_prediction)}</td>
+                  <td>{units(x.inventory_at_prediction)}</td>
                   <td>
                     {number(x.horizon_days)} {t("days")}
                   </td>
                   <td>
-                    {x.forecast_mode === "point_buffer" ? (
-                      <>
-                        {t("Point")}: {number(x.predicted_demand_point)}
-                        <br />
-                        {t("Buffer")}: {number(x.uncertainty_buffer)}
-                      </>
-                    ) : (
-                      <>
-                        P50: {number(x.predicted_demand_p50)}
-                        <br />
-                        P90: {number(x.predicted_demand_p90)}
-                      </>
-                    )}
+                    {units(x.predicted_demand_p90)}
                   </td>
-                  <td>{number(x.safety_stock)}</td>
-                  <td>{number(x.recommended_order_quantity)}</td>
+                  <td>{units(x.recommended_order_quantity)}</td>
                   <td>
-                    {x.case_id ? (
-                      <Link className="text-link analysis-inspect-link" to={casePath(x.case_id)}>
-                        {t("Inspect")}
-                      </Link>
-                    ) : (
-                      t("Normal")
-                    )}
+                    <Link className="text-link analysis-inspect-link" to={casePath(x.case_id)}>
+                      {t("Inspect")}
+                    </Link>
                   </td>
                 </tr>
               ))}
-              {!rows.length && (
+              {!exceptions.length && (
                 <tr>
-                  <td colSpan="7">
-                    {t(data.partial || data.status === 'failed' ? 'No usable results were returned. This run did not complete successfully.' : 'No eligible products. The run completed successfully.')}
+                  <td colSpan="6">
+                    {t(data.partial || data.status === 'failed' ? 'No forecast exceptions were saved before this run stopped.' : 'No forecast exceptions.')}
                   </td>
                 </tr>
               )}
@@ -308,10 +387,10 @@ function Results({ data, runId }) {
           </table>
         </div>
       </section>
-      {!!rows.length && (
-        <section className="panel workflow-body">
-          <h2>{t("Result traceability")}</h2>
-          {rows.map((x) => (
+      {!!exceptions.length && (
+        <details className="panel workflow-body">
+          <summary>{t("Result traceability")}</summary>
+          {exceptions.map((x) => (
             <details key={x.id}>
               <summary>
                 {x.product_id} · {x.model_version}
@@ -327,7 +406,7 @@ function Results({ data, runId }) {
               </p>
             </details>
           ))}
-        </section>
+        </details>
       )}
     </>
   );

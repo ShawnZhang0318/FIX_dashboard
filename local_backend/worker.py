@@ -35,23 +35,49 @@ def claim():
         return dict(job)
 
 
+def load_history(db, refs, product_id, store_id):
+    history = []
+    for ref in refs:
+        row = db.execute("SELECT * FROM snapshots WHERE id=?", (ref["id"],)).fetchone()
+        if (not row or row["source_sha256"] != ref["source_sha256"]
+                or row["product_id"] != product_id or row["store_id"] != store_id
+                or row["snapshot_date"] != ref["snapshot_date"]):
+            raise RuntimeError("Frozen snapshot reference mismatch")
+        history.append(s.row_data(row))
+    return history
+
+
 def process(job, client):
     run_id, job_id = job["run_id"], job["id"]
     try:
         with s.connect() as db:
             frozen = json.loads(db.execute("SELECT frozen_input FROM runs WHERE id=?", (run_id,)).fetchone()[0])
-        if frozen["model_manifest_sha256"] != s.hashlib.sha256((s.MODEL_DIR/"manifest.json").read_bytes()).hexdigest():
+        if frozen.get("diagnostics_mode") != "monthly" and frozen["model_manifest_sha256"] != s.hashlib.sha256((s.MODEL_DIR/"manifest.json").read_bytes()).hexdigest():
             raise RuntimeError("Model manifest changed after input was frozen")
+        diagnostics = None
+        histories = {}
+        if "diagnostics_history" in frozen:
+            with s.connect() as db:
+                histories = {product: load_history(db, refs, product, frozen["store_id"])
+                             for product, refs in frozen["diagnostics_history"].items()}
+            context = {"run_id": run_id, "job_id": job_id, "request_id": frozen["request_id"]}
+            mode = frozen["diagnostics_mode"]
+            s.log("worker", "diagnostics", "diagnostics.requested", f"Calling private AI for {mode} scan", **context)
+            diagnostics = client.diagnostics(mode, {
+                "store_id": frozen["store_id"], "as_of_date": frozen["as_of_date"],
+                "input_reference": frozen["input_reference"],
+                "products": {product: [{"date": x["snapshot_date"], "units_sold": x["units_sold"],
+                                        "inventory_level": x["inventory_level"]} for x in history]
+                             for product, history in histories.items()},
+            }, policy_version=frozen["diagnostics_policy_version"], **context)
         for product in frozen["products"]:
             start = perf_counter()
-            with s.connect() as db:
-                history = []
-                for ref in product["history"]:
-                    row = db.execute("SELECT * FROM snapshots WHERE id=?", (ref["id"],)).fetchone()
-                    if not row or row["source_sha256"] != ref["source_sha256"] or row["product_id"] != product["product_id"] or row["store_id"] != frozen["store_id"]:
-                        raise RuntimeError("Frozen snapshot reference mismatch")
-                    history.append(s.row_data(row))
-                cutoff = next(x for x in history if x["id"] == product["snapshot_id"])
+            product_id = product["product_id"]
+            history = histories.get(product_id)
+            if history is None:
+                with s.connect() as db:
+                    history = load_history(db, product["history"], product_id, frozen["store_id"])
+            cutoff = next(x for x in history if x["id"] == product["snapshot_id"])
             context = {"run_id": run_id, "job_id": job_id, "product_id": product["product_id"],
                        "request_id": frozen["request_id"], "attempt": 1}
             s.log("worker", "features", "features.prepared", "29 frozen daily observations selected; benchmark excluded",
@@ -74,27 +100,39 @@ def process(job, client):
             baseline = sum(x["units_sold"] for x in history[:-1])/28
             threshold = max(frozen["policy"]["unusual_sales_minimum"], baseline*frozen["policy"]["unusual_sales_ratio"])
             unusual = cutoff["units_sold"] > threshold
+            zero_stock = False
+            if diagnostics is not None:
+                findings = diagnostics["products"][product_id]
+                high_sales = findings["high_sales"]
+                baseline, threshold = high_sales["baseline"], high_sales["threshold"]
+                unusual = high_sales["status"] == "anomaly"
+                zero_stock = findings["persistent_zero_stock"]["status"] == "anomaly"
             s.log("worker", "policy", "policy.applied", "Frozen inventory policy applied to cutoff stock",
                   context={"policy_version": frozen["policy"]["version"], "observed_stock": cutoff["inventory_level"],
                            "safety_stock": p90-p50, "recommended_order_quantity": quantity,
                            "unusual_sales_threshold": threshold, "unusual_sales_triggered": unusual}, **context)
-            case_id = str(s.uuid4()) if quantity > 0 or unusual else None
+            anomaly = unusual or zero_stock
+            reasons = (["stockout_risk"] if quantity else []) + (["unusual_demand"] if unusual else [])
+            if zero_stock:
+                reasons.append("persistent_zero_stock")
+            case_id = str(s.uuid4()) if quantity > 0 or anomaly else None
             result_id = str(s.uuid4())
             result = {**forecast, "id": result_id, "analysis_run_id": run_id, "snapshot_id": cutoff["id"],
                       "snapshot_date": cutoff["snapshot_date"], "inventory_at_prediction": cutoff["inventory_level"],
                       "safety_stock": p90-p50, "recommended_order_quantity": quantity, "case_id": case_id,
                       "policy_version": frozen["policy"]["version"], "processed_at": s.utcnow(),
                       "duration_ms": round((perf_counter()-start)*1000, 3),
-                      "anomaly_type": "unusual_demand" if unusual else None,
+                      "anomaly_type": "unusual_demand" if unusual else "persistent_zero_stock" if zero_stock else None,
                       "anomaly_score": cutoff["units_sold"]/max(baseline, 1),
-                      "anomaly_threshold": threshold, "anomaly_severity": 1 if unusual else 0,
-                      "triggered_reasons": (["stockout_risk"] if quantity else [])+(["unusual_demand"] if unusual else []),
-                      "explanation": f"Reorder = ceil(max(0, P90 − observed stock)). Worker unusual-sales rule: today's sales > {threshold:.2f}; no AI anomaly model."}
+                      "anomaly_threshold": threshold, "anomaly_severity": int(anomaly),
+                      "triggered_reasons": reasons,
+                      "explanation": f"Reorder = ceil(max(0, P90 − observed stock)). High sales threshold: {threshold:.2f}. "
+                                     + ("Persistent zero inventory detected." if zero_stock else "")}
             with s.connect() as db:
                 s.begin_write(db)
                 s.insert_result(db, result, product["product_id"], cutoff["id"])
                 if case_id:
-                    kind = "reorder_and_anomaly" if quantity and unusual else "reorder" if quantity else "anomaly"
+                    kind = "reorder_and_anomaly" if quantity and anomaly else "reorder" if quantity else "anomaly"
                     case = {"id": case_id, "analysis_run_id": run_id, "forecast_result_id": result_id,
                             "exception_type": kind, "created_at": s.utcnow()}
                     s.insert_case(db, case, "pending_review")
@@ -106,12 +144,12 @@ def process(job, client):
                               ON CONFLICT(key) DO UPDATE SET value=excluded.value""", (s.utcnow(),))
                 s.event(db, "worker", "persistence", "result.committed", "Forecast and optional case committed atomically",
                         case_id=case_id, duration_ms=result["duration_ms"], **context)
-        finish(run_id, job_id)
+        finish(run_id, job_id, diagnostics=diagnostics)
     except Exception as exc:
         finish(run_id, job_id, exc)
 
 
-def finish(run_id, job_id, error=None):
+def finish(run_id, job_id, error=None, *, diagnostics=None):
     with s.connect() as db:
         s.begin_write(db)
         run = s.run_data(db, run_id)
@@ -123,6 +161,11 @@ def finish(run_id, job_id, error=None):
         completed_at = s.utcnow()
         run.update(completed_at=completed_at, partial=bool(error and run["processed_count"]),
                    error=str(error) if error else None)
+        if diagnostics is not None and not error:
+            run["diagnostics"] = diagnostics
+            s.event(db, "worker", "diagnostics", "diagnostics.committed",
+                    f"Saved diagnostics for {len(diagnostics['products'])} products",
+                    run_id=run_id, job_id=job_id, request_id=request_id)
         s.set_run_state(db, run_id, status, run, completed_at=completed_at)
         s.set_job_state(db, job_id, status, completed_at=completed_at, error=error)
         s.event(db, "worker", "completion", f"job.{status}", f"Run {status}; {run['processed_count']}/{run['expected_count']} saved",
