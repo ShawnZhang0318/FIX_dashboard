@@ -1,6 +1,6 @@
 # 真实模型本地联调：启动、数据流与团队交接
 
-更新：2026-10-22。默认仍是本地 SQLite 联调；设置 `FIX_DATABASE_URL` 后，API 和 worker 使用 PostgreSQL，并在启动时应用版本化 schema migration。仅上传代码、模型/原始数据与文档，不上传本地数据库、审核记录、执行日志或虚拟环境。
+更新：2026-11-07。默认仍是本地 SQLite 联调；设置 `FIX_DATABASE_URL` 后，API 和 worker 使用 PostgreSQL，并在启动时应用版本化 schema migration。Supabase PostgreSQL 可使用其 Transaction Pooler 连接串。仅上传代码、模型/原始数据与文档，不上传本地数据库、审核记录、执行日志或虚拟环境。
 
 ## 已接通的内容
 
@@ -73,6 +73,18 @@ python -m venv .venv-model
 
 如需旧 mock 演示，把 `public/runtime-config.js` 改回 `mode:'mock'`、`localIntegration:false`，构建并刷新。mock 数据仍在原浏览器存储中，与真实 SQLite 数据隔离。
 
+### Supabase PostgreSQL 首次连接与导入
+
+Supabase 项目 **Project FIX** 的 `public` schema 原为空；当前已创建应用表和迁移版本记录，但 CSV 数据需在配置数据库连接后导入。进入 **Project FIX → Connect**，复制 **Transaction pooler** 连接串，并将数据库密码和主机替换到环境变量。连接串应包含 `sslmode=require`；不要使用前端 publishable/anon key 代替数据库连接串，也不要把数据库 URL 写入 `public/runtime-config.js`：
+
+```sh
+export FIX_DATABASE_URL='postgresql://postgres.<project-ref>:<database-password>@<pooler-host>:6543/postgres?sslmode=require'
+```
+
+使用同一环境变量分别启动 API 与 worker。API 启动时自动运行 `local_backend/migrations/` 的待执行迁移；Supabase 的业务表启用 RLS，前端仍只通过 API 访问数据。数据库连接关闭 psycopg 服务端预编译语句，以兼容 transaction pooler。API 健康检查通过后，执行 `python -m local_backend.import_csv --api http://127.0.0.1:8000`，通过公共 API 导入并校验 14,620 条 S001 快照。重复运行只跳过内容一致的数据，发现冲突会报错，不会覆盖。
+
+注意：PostgreSQL URI 中密码的保留字符必须进行 URL 编码，例如 `@` 写为 `%40`、`#` 写为 `%23`、`%` 写为 `%25`，否则可能被误解析为主机名并造成 DNS 解析失败。若密码曾发到聊天或提交到代码，应先在 Supabase 轮换数据库密码，再使用新密码连接。
+
 ## 本机保存在哪里
 
 | 文件 / 目录 | 用途 |
@@ -86,6 +98,8 @@ python -m venv .venv-model
 上述运行数据和环境已加入 `.gitignore`。SQLite 使用 WAL；备份时先正常停止服务，或用 SQLite 的备份接口，不要在运行中只复制一个数据库文件。
 
 ## 模型与 W04 需要明确的适配
+
+> 更正（2026-11-07）：hosted provider 已确定为 Supabase Project FIX；以下历史记录中的“团队尚未确定”已过时。连接方式见上方 Supabase 连接与导入说明。
 
 1. **数据库。** 未设置 `FIX_DATABASE_URL` 时使用 SQLite；设置为 `postgresql://...` 时，API 与 worker 共用 PostgreSQL。首次启动会依序执行 `local_backend/migrations/` 中尚未应用的 SQL migration，版本记录写入 `schema_migrations`。PostgreSQL 实现 ERD 中的 Product、InventoryItem、Transaction、AnalysisRun、Job、ForecastResult 和 ExceptionCase，并保留 DailyInventorySnapshot 作为模型历史输入。InventoryItem 的 `product_id` 是主键，因此每个 Product 最多一个当前库存记录；`store_id` 保留为当前 S001 API 的兼容字段。CSV 提供的是每日汇总，不是逐笔交易，因此导入器不会伪造 Transaction 记录；交易表目前为空，需接入真实交易来源后再写入。Product 名称暂以稳定 product ID 填充，因为 CSV 没有独立产品名称；初始库存以首次录入该产品时的库存快照值初始化，默认运输方式未知时为 NULL。PostgreSQL 的 `data` 文本列保留现有 API 序列化响应，不替代规范化约束列。SQLite 仍使用现有本地 demo schema；现有 SQLite 记录不会自动复制到 PostgreSQL，请重新导入快照数据。
 2. **PostgreSQL 环境配置。** 在启动 API 和 worker 的 shell 环境中都设置同一个 `FIX_DATABASE_URL`，例如 `postgresql://USER:PASSWORD@HOST:5432/DBNAME`。不要把真实密码提交到仓库。连接失败会导致服务启动失败，不会静默切回 SQLite。部署方仍需创建数据库、网络访问和备份策略；团队尚未确定 hosted provider。

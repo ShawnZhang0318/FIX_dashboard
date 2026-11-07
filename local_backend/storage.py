@@ -102,7 +102,7 @@ def connect():
         from psycopg.rows import tuple_row
 
         url = DATABASE_URL.replace("postgres://", "postgresql://", 1)
-        with psycopg.connect(url, row_factory=tuple_row) as connection:
+        with psycopg.connect(url, row_factory=tuple_row, prepare_threshold=None) as connection:
             yield _PostgresConnection(connection)
         return
     STATE.mkdir(parents=True, exist_ok=True)
@@ -310,65 +310,105 @@ def case_data(db, case_id):
 
 
 def ingest(db, snapshots, source_sha256):
+    if is_postgres():
+        rows = []
+        for item in snapshots:
+            data = dict(item)
+            data["id"] = str(uuid4())
+            data["created_at"] = utcnow()
+            data["source_file_sha256"] = source_sha256
+            rows.append(data)
+
+        product_ids = list(dict.fromkeys(row["product_id"] for row in rows))
+        product_values = ",".join("(?,?)" for _ in product_ids)
+        db.execute(f"""INSERT INTO products(id,name) VALUES {product_values}
+                       ON CONFLICT(id) DO NOTHING""",
+                   tuple(value for product_id in product_ids for value in (product_id, product_id)))
+
+        snapshot_columns = 18
+        snapshot_values = ",".join(
+            "(" + ",".join("?" for _ in range(snapshot_columns)) + ")" for _ in rows
+        )
+        db.execute(
+            f"""INSERT INTO snapshots(
+                    id,store_id,product_id,snapshot_date,source_sha256,inventory_level,units_sold,
+                    units_ordered,price,discount,weather_condition,holiday_promotion,competitor_pricing,
+                    seasonality,demand_forecast_benchmark,source_reference,created_at,data
+                ) VALUES {snapshot_values}""",
+            tuple(value for row in rows for value in (
+                row["id"], row["store_id"], row["product_id"], row["snapshot_date"], source_sha256,
+                row["inventory_level"], row["units_sold"], row["units_ordered"], row["price"],
+                row["discount_raw"], row["weather_condition"], row["holiday_promotion"],
+                row["competitor_pricing"], row["seasonality_raw"], row["demand_forecast_benchmark"],
+                row["source_reference"], row["created_at"], encode(row),
+            )),
+        )
+
+        latest_by_product = {}
+        for row in rows:
+            product_id = row["product_id"]
+            if product_id not in latest_by_product or row["snapshot_date"] > latest_by_product[product_id]["snapshot_date"]:
+                latest_by_product[product_id] = row
+        inventory_values = ",".join(
+            "(" + ",".join("?" for _ in range(11)) + ")" for _ in latest_by_product
+        )
+        inventory_parameters = []
+        for product_id, row in latest_by_product.items():
+            current = {
+                "store_id": row["store_id"], "product_id": product_id,
+                "on_hand_quantity": row["inventory_level"], "snapshot_date": row["snapshot_date"],
+                "source_snapshot_id": row["id"], "category": row["category_raw"],
+                "lead_time_days": POLICY["lead_times"][product_id], "policy_version": POLICY["version"],
+            }
+            inventory_parameters.extend((
+                product_id, row["store_id"], row["id"], row["snapshot_date"], row["inventory_level"],
+                row["inventory_level"], None, current["lead_time_days"], None,
+                row["created_at"], encode(current),
+            ))
+        db.execute(
+            f"""INSERT INTO inventory(
+                    product_id,store_id,snapshot_id,snapshot_date,initial_quantity,on_hand_quantity,
+                    default_shipping_method,lead_time_days,safety_stock,updated_at,data
+                ) VALUES {inventory_values}
+                ON CONFLICT(product_id) DO UPDATE SET
+                    snapshot_id=excluded.snapshot_id,snapshot_date=excluded.snapshot_date,
+                    on_hand_quantity=excluded.on_hand_quantity,lead_time_days=excluded.lead_time_days,
+                    updated_at=excluded.updated_at,data=excluded.data
+                WHERE excluded.snapshot_date > inventory.snapshot_date""",
+            tuple(inventory_parameters),
+        )
+        for product_id in product_ids:
+            first = db.execute(
+                """SELECT inventory_level FROM snapshots
+                   WHERE store_id='S001' AND product_id=?
+                   ORDER BY snapshot_date,id LIMIT 1""",
+                (product_id,),
+            ).fetchone()
+            db.execute("UPDATE inventory SET initial_quantity=? WHERE product_id=?",
+                       (first["inventory_level"], product_id))
+        return {"inserted_count": len(rows), "snapshot_ids": [row["id"] for row in rows]}
+
     ids = []
-    affected_products = set()
     for item in snapshots:
         data = dict(item)
-        affected_products.add(data["product_id"])
         sid = str(uuid4())
         data["id"] = sid
         data["created_at"] = utcnow()
         data["source_file_sha256"] = source_sha256
-        if is_postgres():
-            db.execute("""INSERT INTO products(id,name)
-                          VALUES(?,?) ON CONFLICT(id) DO NOTHING""",
-                       (data["product_id"], data["product_id"]))
-            db.execute("""INSERT INTO snapshots(
-                            id,store_id,product_id,snapshot_date,source_sha256,inventory_level,units_sold,
-                            units_ordered,price,discount,weather_condition,holiday_promotion,competitor_pricing,
-                            seasonality,demand_forecast_benchmark,source_reference,created_at,data
-                          ) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
-                       (sid, data["store_id"], data["product_id"], data["snapshot_date"], source_sha256,
-                        data["inventory_level"], data["units_sold"], data["units_ordered"], data["price"],
-                        data["discount_raw"], data["weather_condition"], data["holiday_promotion"],
-                        data["competitor_pricing"], data["seasonality_raw"], data["demand_forecast_benchmark"],
-                        data["source_reference"], data["created_at"], encode(data)))
-        else:
-            db.execute("INSERT OR IGNORE INTO products(id) VALUES(?)", (data["product_id"],))
-            db.execute("INSERT INTO snapshots VALUES(?,?,?,?,?,?)",
-                       (sid, data["store_id"], data["product_id"], data["snapshot_date"], source_sha256, encode(data)))
+        db.execute("INSERT OR IGNORE INTO products(id) VALUES(?)", (data["product_id"],))
+        db.execute("INSERT INTO snapshots VALUES(?,?,?,?,?,?)",
+                   (sid, data["store_id"], data["product_id"], data["snapshot_date"], source_sha256, encode(data)))
         current = {"store_id": data["store_id"], "product_id": data["product_id"],
                    "on_hand_quantity": data["inventory_level"], "snapshot_date": data["snapshot_date"],
                    "source_snapshot_id": sid, "category": data["category_raw"],
                    "lead_time_days": POLICY["lead_times"][data["product_id"]],
                    "policy_version": POLICY["version"]}
-        if is_postgres():
-            db.execute("""INSERT INTO inventory(
-                            product_id,store_id,snapshot_id,snapshot_date,initial_quantity,on_hand_quantity,
-                            default_shipping_method,lead_time_days,safety_stock,updated_at,data
-                          ) VALUES(?,?,?,?,?,?,NULL,?,NULL,?,?)
-                          ON CONFLICT(product_id) DO UPDATE SET
-                            snapshot_id=excluded.snapshot_id,snapshot_date=excluded.snapshot_date,
-                            on_hand_quantity=excluded.on_hand_quantity,lead_time_days=excluded.lead_time_days,
-                            updated_at=excluded.updated_at,data=excluded.data
-                          WHERE excluded.snapshot_date > inventory.snapshot_date""",
-                       (data["product_id"], data["store_id"], sid, data["snapshot_date"],
-                        data["inventory_level"], data["inventory_level"], current["lead_time_days"],
-                        data["created_at"], encode(current)))
-        else:
-            db.execute("""INSERT INTO inventory VALUES(?,?,?,?,?)
-              ON CONFLICT(store_id,product_id) DO UPDATE SET snapshot_id=excluded.snapshot_id,
-              snapshot_date=excluded.snapshot_date,data=excluded.data
-              WHERE excluded.snapshot_date > inventory.snapshot_date""",
-                       (data["store_id"], data["product_id"], sid, data["snapshot_date"], encode(current)))
+        db.execute("""INSERT INTO inventory VALUES(?,?,?,?,?)
+          ON CONFLICT(store_id,product_id) DO UPDATE SET snapshot_id=excluded.snapshot_id,
+          snapshot_date=excluded.snapshot_date,data=excluded.data
+          WHERE excluded.snapshot_date > inventory.snapshot_date""",
+                   (data["store_id"], data["product_id"], sid, data["snapshot_date"], encode(current)))
         ids.append(sid)
-    if is_postgres():
-        for product_id in affected_products:
-            first = db.execute("""SELECT inventory_level FROM snapshots
-                                  WHERE store_id='S001' AND product_id=?
-                                  ORDER BY snapshot_date,id LIMIT 1""", (product_id,)).fetchone()
-            db.execute("UPDATE inventory SET initial_quantity=? WHERE product_id=?",
-                       (first["inventory_level"], product_id))
     return {"inserted_count": len(ids), "snapshot_ids": ids}
 
 

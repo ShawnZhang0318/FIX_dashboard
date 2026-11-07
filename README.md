@@ -1,26 +1,68 @@
-# Project F.I.X. Dashboard
+python -m local_backend.import_csv --api http://127.0.0.1:8000# Project F.I.X. Dashboard
 
 AI v1 source assets remain in [ai/README.md](ai/README.md), with the original [AI handoff](docs/ai-handoff-plan.md) and [model data handoff](docs/model-data-handoff.md). The current local integration is documented below.
 
 The React + Vite dashboard for Project F.I.X. It includes English and Simplified Chinese interfaces for Inventory, Analysis, forecast results, Exceptions, human review and backend execution logs. Local integration connects the real `s001-global-q-v1` model through a public API, a separate worker, and configurable SQLite or PostgreSQL persistence.
 
-**2026-10-22 database update:** SQLite remains the default local demo database. Set `FIX_DATABASE_URL` to a PostgreSQL URL to use the normalized PostgreSQL schema and its versioned startup migration. GitHub Pages displays mock data; real predictions require the local services.
+**Database:** SQLite remains the default local demo database. Set `FIX_DATABASE_URL` to a PostgreSQL URL to use the normalized PostgreSQL schema and its versioned startup migrations. Supabase PostgreSQL works with its transaction pooler connection string; database connections stay server-side and never belong in the frontend. GitHub Pages displays mock data; real predictions require the local services.
 
 **中文文档：[W04 数据流核对与接口传输](docs/data-flow-audit-zh.md) · [整合版改动说明](docs/changes-zh.md) · [后端日志接入约定](docs/backend-logs-contract.md) · [日志与接口传输](docs/dashboard-logging-zh.md) · [运行与验收](docs/react-integration.md) · [团队接入说明](docs/team-integration-ZH.md)**
 
 ## Run locally
 
-Requires Node.js 20.19 or newer and Python 3.12 for the verified local setup.
+The API must be running before the CSV importer can connect. For the Supabase setup, run the API in one terminal and the importer in another. Requires Python dependencies from `ai/requirements-dev.txt`.
 
-```bash
-npm ci
-python -m venv .venv-model
-.\.venv-model\Scripts\python.exe -m pip install -r ai/requirements-dev.txt
-.\scripts\start-local-demo.ps1
-.\.venv-model\Scripts\python.exe -m local_backend.import_csv
+**macOS/Linux — Terminal 1 (API):**
+
+```sh
+source .venv/bin/activate
+export FIX_DATABASE_URL='postgresql://postgres.<project-ref>:<database-password>@<pooler-host>:6543/postgres?sslmode=require'
+python -m uvicorn local_backend.service:app --host 127.0.0.1 --port 8000
 ```
 
-Open `http://127.0.0.1:5174/FIX_dashboard/#/analysis` and use `2023-11-15`. Loopback pages select the local live API; static hosting retains mock mode. The CSV importer sends 14,620 S001 observations through the public API. By default, results and reviews persist in `.local-integration/fix.sqlite3`; when `FIX_DATABASE_URL` is set, they persist in PostgreSQL instead. See the Chinese guide for setup and stopping services.
+Keep that terminal open. Wait until startup completes, then check in another terminal:
+
+```sh
+curl http://127.0.0.1:8000/health/live
+```
+
+The response should report `"database":"PostgreSQL"`. If it reports `local SQLite`, `FIX_DATABASE_URL` was not set in the API terminal; stop the API and start it again after exporting the Supabase URL.
+
+**macOS/Linux — Terminal 2 (import):**
+
+```sh
+source .venv/bin/activate
+python -m local_backend.import_csv --api http://127.0.0.1:8000
+```
+
+The importer sends 14,620 S001 observations through the public API in batches, one request at a time by default to avoid transaction-pooler contention. Each PostgreSQL batch is inserted with bulk SQL. It can run without the worker or AI service. For predictions, start the worker and AI service separately, with the same `FIX_DATABASE_URL` exported in the worker terminal.
+
+On Windows, `.\\scripts\\start-local-demo.ps1` starts the local services; see [local integration guide](docs/local-integration-zh.md) for the Windows setup. The dashboard is optional for importing. By default, data persists in `.local-integration/fix.sqlite3`; when `FIX_DATABASE_URL` is set, it persists in PostgreSQL instead.
+
+### Connect Supabase PostgreSQL and import the CSV
+
+1. In Supabase, open **Project FIX → Connect** and copy the **Transaction pooler** connection string. Use the database password and retain `sslmode=require` if shown. Do not use a publishable/anon key as a database URL.
+2. Set `FIX_DATABASE_URL` in the environment used to start both the API and worker. For example, on macOS/Linux:
+
+   ```sh
+   export FIX_DATABASE_URL='postgresql://postgres.<project-ref>:<database-password>@<pooler-host>:6543/postgres?sslmode=require'
+   ```
+
+   Replace the placeholders with the connection details from Supabase; do not commit the URL. URL-encode reserved characters in the password (for example, `@` becomes `%40`, `#` becomes `%23`, and `%` becomes `%25`) or the URI may parse incorrectly and fail DNS resolution. The pooler-safe psycopg configuration disables server-side prepared statements.
+3. In separate terminals, start the API and worker with that environment. API startup applies the versioned schema migrations. Those migrations enable row-level security on the application tables; the trusted backend connects with the database role and the browser never connects directly to Postgres.
+
+   ```sh
+   python -m uvicorn local_backend.service:app --host 127.0.0.1 --port 8000
+   python -m local_backend.worker
+   ```
+
+4. Once `http://127.0.0.1:8000/health/ready` is healthy, run:
+
+   ```sh
+   python -m local_backend.import_csv --api http://127.0.0.1:8000
+   ```
+
+   The importer verifies the source checksum, inserts the 14,620 S001 daily snapshots in batches through the API, and reports the inserted count. It skips identical existing rows and refuses to overwrite different data. It does not fabricate transaction-level records.
 
 ## Routes
 
