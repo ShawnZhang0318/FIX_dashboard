@@ -34,6 +34,8 @@ jobs:
 
       - name: Build dashboard
         run: npm run build
+        env:
+          VITE_BASE_PATH: /FIX_dashboard/
 
       - name: Upload Pages artifact
         uses: actions/upload-pages-artifact@v4

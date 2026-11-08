@@ -54,7 +54,7 @@ export function prepareSnapshotBatch(body, {validateSource = true} = {}) {
 export function prepareRun(body) {
   requireValue(body && typeof body === 'object', 'analysis request');
   requireValue(body.store_id === STORE_ID, 'store_id');
-  requireValue(body.run_type === 'daily', 'run_type (Monthly is not implemented)');
+  requireValue(['daily', 'monthly'].includes(body.run_type), 'run_type');
   requireValue(isDate(body.as_of_date), 'as_of_date');
   // Frozen inputs, features, versions and predictions are owned by API/worker.
   return pick(body, ['store_id', 'run_type', 'as_of_date']);
