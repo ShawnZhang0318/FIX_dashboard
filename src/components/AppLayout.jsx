@@ -62,7 +62,7 @@ function getPageTitle(pathname, t) {
 
 export default function AppLayout() {
   const { pathname, search } = useLocation();
-  const serverLogs = pathname.startsWith('/logs') && new URLSearchParams(search).get('source') !== 'browser';
+  const serverLogs = pathname.startsWith('/logs') && new URLSearchParams(search).get('source') === 'backend';
   useEffect(() => { window.scrollTo(0, 0); }, [pathname]);
   const { language, t, toggleLanguage } = useLanguage();
   const pageTitle = getPageTitle(pathname, t);
@@ -136,7 +136,7 @@ export default function AppLayout() {
         </header>
 
         <main className="main-content">
-          {!pathname.startsWith('/logs') && <div className="workflow-message workflow-notice">{t(config.localIntegration ? 'Local integration uses the trained model and a separate SQLite database. PostgreSQL is not connected. Historical analysis uses stock at the selected cutoff.' : config.mode==='mock'?'Synthetic fixtures only. No trained model or server database. Saved in this browser.':'Live API mode. Results come from the configured backend.')}</div>}
+          {!pathname.startsWith('/logs') && <div className="workflow-message workflow-notice">{t(config.localIntegration ? 'Local integration uses the trained model and a separate SQLite database. PostgreSQL is not connected. Daily analysis uses the current business date and requires complete data for all products plus 29 days of history.' : config.mode==='mock'?'Synthetic fixtures only. No trained model or server database. Saved in this browser.':'Live API mode. Results come from the configured backend.')}</div>}
           <Outlet />
           <footer className="page-footer">
             <span>{t('Project F.I.X. · Demo workspace')}</span>

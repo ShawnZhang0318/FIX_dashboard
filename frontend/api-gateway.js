@@ -38,7 +38,7 @@ export function createApiGateway(adapter, {log, mode, now = () => Date.now(), uu
       if (data?.job?.id) meta.jobId = data.job.id;
       const count = Array.isArray(data) ? data.length : Array.isArray(data?.results) ? data.results.length : undefined;
       record({...meta, event: 'request.succeeded', level: 'info', durationMs: Math.max(0, now() - start), recordCount: count});
-      if (operation === 'createAnalysisRun') record({...meta, event: 'analysis.created', level: 'info', status: data.analysis_run.status});
+      if (operation === 'createAnalysisRun') record({...meta, runType: args[0].run_type, asOfDate: args[0].as_of_date, event: 'analysis.created', level: 'info', status: data.analysis_run.status});
       if (operation === 'getAnalysisRun') {
         let previous;
         try { previous = log.getSnapshot().entries.find(x => x.mode === mode && x.runId === data.id && ['analysis.created', 'run.observed'].includes(x.event)); } catch { /* Logging is best-effort. */ }

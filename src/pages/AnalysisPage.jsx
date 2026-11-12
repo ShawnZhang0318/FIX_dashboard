@@ -15,6 +15,11 @@ import {
 
 const units = (value) => number(Number.isFinite(value) ? Math.ceil(value) : null);
 
+function localToday() {
+  const today = new Date();
+  return [today.getFullYear(), String(today.getMonth() + 1).padStart(2, "0"), String(today.getDate()).padStart(2, "0")].join("-");
+}
+
 export default function AnalysisPage() {
   const { runId } = useParams();
   return <AnalysisWorkspace key={runId || "new"} runId={runId} />;
@@ -22,8 +27,8 @@ export default function AnalysisPage() {
 function AnalysisWorkspace({ runId }) {
   const { t } = useLanguage(),
     navigate = useNavigate();
-  const [date, setDate] = useState(config.mode === "mock" ? "2022-06-30" : config.defaultAnalysisDate || ""),
-    [scenario, setScenario] = useState("success");
+  const monthlyRecommendationsAvailable = false;
+  const [scenario, setScenario] = useState("success");
   const [mode, setMode] = useState("daily");
   const [run, setRun] = useState(null),
     [results, setResults] = useState(null),
@@ -31,6 +36,7 @@ function AnalysisWorkspace({ runId }) {
     [createError, setCreateError] = useState(null),
     [busy, setBusy] = useState(false),
     [revision, setRevision] = useState(0);
+  const analysisDate = run?.as_of_date || (config.mode === "mock" ? "2022-06-30" : localToday());
   const active = useRef(true),
     submitting = useRef(false);
   useEffect(() => {
@@ -53,7 +59,6 @@ function AnalysisWorkspace({ runId }) {
         if (!["queued", "processing", "completed", "failed"].includes(r.status))
           throw Error("Unsupported run status: " + r.status);
         setRun(r);
-        setDate(r.as_of_date);
         if (r.run_type) setMode(r.run_type);
         if (r.scenario) setScenario(r.scenario);
         if (["queued", "processing"].includes(r.status)) {
@@ -88,7 +93,7 @@ function AnalysisWorkspace({ runId }) {
       const data = await api.createAnalysisRun({
         store_id: "S001",
         run_type: mode,
-        as_of_date: date,
+        as_of_date: analysisDate,
         scenario,
       });
       if (!data?.analysis_run?.id) throw Error("Missing analysis_run.id");
@@ -105,43 +110,44 @@ function AnalysisWorkspace({ runId }) {
       <PageHeader
         eyebrow={t("Daily demand planning")}
         title={t(runId ? "Analysis run" : "Analysis")}
-        description={t(
-          "Follow the status and results for this analysis request.",
-        )}
+        description={t("Run a Daily analysis for today or a Monthly forecast for the next 30 days. Past analyses are in Logs.")}
       />
       <div className="analysis-grid">
         <section className="panel request-panel">
           <div className="panel-heading">
-            <h2>{t(mode === "monthly" ? "Run Monthly Scan" : "Run daily analysis")}</h2>
+            <h2>{t("Choose an analysis period")}</h2>
           </div>
           <form onSubmit={create}>
+            <div className="analysis-mode-picker" role="group" aria-label={t("Analysis period")}>
+              <button
+                className={`analysis-mode-card${mode === "daily" ? " is-selected" : ""}`}
+                type="button"
+                aria-pressed={mode === "daily"}
+                disabled={running || busy}
+                onClick={() => setMode("daily")}
+              >
+                <span className="analysis-mode-card__title">{t("Daily")}</span>
+                <span className="analysis-mode-card__summary">{t("Analyze today's demand and recommend replenishment")}</span>
+                <span className="analysis-mode-card__detail">{t(config.mode === "mock" ? "Demo data date" : "Analysis date")}: <strong>{analysisDate}</strong></span>
+              </button>
+              <button
+                className={`analysis-mode-card${mode === "monthly" ? " is-selected" : ""}`}
+                type="button"
+                aria-pressed={mode === "monthly"}
+                disabled={running || busy || config.mode === "mock"}
+                onClick={() => setMode("monthly")}
+              >
+                <span className="analysis-mode-card__title">{t("Monthly")}</span>
+                <span className="analysis-mode-card__summary">{t("Forecast demand and recommendations for the next 30 days")}</span>
+                <span className="analysis-mode-card__detail">{t("Forecast window")}: <strong>{t("Next 30 days")}</strong></span>
+              </button>
+            </div>
+            {(config.mode === "mock" || !monthlyRecommendationsAvailable) && <p className="analysis-mode-note">{t("Monthly recommendations are not available yet. The current API monthly mode is a historical anomaly scan, so it will not be started here.")}</p>}
+            <p className="analysis-data-note">{t("Daily analysis needs a complete snapshot for all products today and 29 days of history. If required data is missing, the API will reject the request.")}</p>
             <div className="request-fields">
               <label className="field-group">
                 {t("Store")}
                 <input className="field-value" disabled value="S001" />
-              </label>
-              {config.mode !== "mock" && (
-                <label className="field-group">
-                  {t("Analysis type")}
-                  <select className="field-value" value={mode} disabled={running || busy}
-                          onChange={(e) => setMode(e.target.value)}>
-                    <option value="daily">{t("Daily analysis")}</option>
-                    <option value="monthly">{t("Monthly full scan")}</option>
-                  </select>
-                </label>
-              )}
-              <label className="field-group">
-                {t("Analysis date")}
-                <input
-                  className="field-value"
-                  type="date"
-                  required
-                  value={date}
-                  disabled={running || busy}
-                  min={config.mode === "mock" ? "2022-06-30" : mode === "daily" ? config.minimumAnalysisDate : undefined}
-                  max={config.mode === "mock" ? "2022-06-30" : undefined}
-                  onChange={(e) => setDate(e.target.value)}
-                />
               </label>
               {config.mode === "mock" && (
                 <label className="field-group">
@@ -162,13 +168,13 @@ function AnalysisWorkspace({ runId }) {
               )}
             </div>
             <div className="request-footer">
-              <button className="primary-button" disabled={running || busy || createError?.writeUncertain}>
+              <button className="primary-button" disabled={running || busy || createError?.writeUncertain || (mode === "monthly" && !monthlyRecommendationsAvailable)}>
                 {t(
                   busy
                     ? "Creating…"
                     : running
                       ? "Analysis in progress"
-                      : mode === "monthly" ? "Run Monthly Scan" : "Run Daily Analysis",
+                      : mode === "monthly" ? "Monthly Forecast Coming Soon" : "Run Daily Analysis",
                 )}
               </button>
             </div>
@@ -215,7 +221,7 @@ function AnalysisWorkspace({ runId }) {
               reload={() => setRevision((x) => x + 1)}
             />
             {runId && (
-              <Link className="text-link" to={`/logs?${new URLSearchParams({run_id: runId, ...(run?.job?.id ? {job_id: run.job.id} : {})})}`}>{t('View task logs')}</Link>
+              <Link className="text-link" to={`/logs?${new URLSearchParams({source: 'backend', run_id: runId, ...(run?.job?.id ? {job_id: run.job.id} : {})})}`}>{t('View task logs')}</Link>
             )}
             {runId && (
               <Link className="text-link" to="/analysis">

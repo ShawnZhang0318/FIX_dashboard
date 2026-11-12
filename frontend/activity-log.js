@@ -1,7 +1,7 @@
 export const LOG_KEY = 'fix-dashboard-log-v1';
 export const LOG_LIMIT = 300;
 export const newRequestId = () => globalThis.crypto?.randomUUID?.() || `req-${Date.now()}-${Math.random().toString(36).slice(2)}`;
-const textFields = ['id', 'timestamp', 'event', 'level', 'mode', 'operation', 'method', 'endpoint', 'requestId', 'serverRequestId', 'runId', 'jobId', 'caseId', 'status', 'errorCode', 'field'];
+const textFields = ['id', 'timestamp', 'event', 'level', 'mode', 'operation', 'method', 'endpoint', 'requestId', 'serverRequestId', 'runId', 'jobId', 'caseId', 'status', 'errorCode', 'field', 'runType', 'asOfDate'];
 function clean(value) {
   const row = {};
   // Explicit allowlist: no body, response, headers, reviewer names or reasons.

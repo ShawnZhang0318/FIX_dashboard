@@ -7,7 +7,7 @@ const translations = {
   'zh-CN': {
     'Local model integration': '本地模型联调',
     'Real model · Local SQLite': '真实模型 · 本地 SQLite',
-    'Local integration uses the trained model and a separate SQLite database. PostgreSQL is not connected. Historical analysis uses stock at the selected cutoff.': '当前使用已训练模型和独立的本地 SQLite 数据库，尚未接入 PostgreSQL。历史分析使用所选日期的库存。',
+    "Local integration uses the trained model and a separate SQLite database. PostgreSQL is not connected. Daily analysis uses the current business date and requires complete data for all products plus 29 days of history.": "当前使用已训练模型和独立的本地 SQLite 数据库，尚未接入 PostgreSQL。Daily 使用当天数据，并需要所有商品的完整快照和此前 29 天的历史。",
     'Primary navigation': '主导航',
     'Inventory': '库存',
     'Analysis': '分析',

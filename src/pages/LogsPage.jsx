@@ -1,7 +1,7 @@
 import { useState, useSyncExternalStore } from 'react';
 import { Link, useSearchParams } from 'react-router';
 import PageHeader from '../components/PageHeader.jsx';
-import { Feedback, Metric } from '../components/WorkflowUI.jsx';
+import { Badge, Feedback, Metric } from '../components/WorkflowUI.jsx';
 import { useLanguage } from '../i18n.jsx';
 import { activityLog, LOG_LIMIT } from '../../frontend/activity-log.js';
 import { api, config, runPath, casePath } from '../workflow.js';
@@ -10,9 +10,53 @@ import BackendLogsPage from './BackendLogsPage.jsx';
 export default function LogsPage() {
   const {t} = useLanguage();
   const [params] = useSearchParams();
-  const browser = params.get('source') === 'browser';
-  return <><nav className="log-source-tabs" aria-label={t('Log source')}><Link className={browser ? 'secondary-button' : 'primary-button'} to="/logs" aria-current={!browser ? 'page' : undefined}>{t('Backend logs')}</Link><Link className={browser ? 'primary-button' : 'secondary-button'} to="/logs?source=browser" aria-current={browser ? 'page' : undefined}>{t('Browser diagnostics')}</Link></nav>{browser ? <BrowserLogs /> : <BackendLogsPage />}</>;
+  const source = params.get('source') || 'analysis';
+  return <>
+    <nav className="log-source-tabs" aria-label={t('Log source')}>
+      <Link className={source === 'analysis' ? 'primary-button' : 'secondary-button'} to="/logs" aria-current={source === 'analysis' ? 'page' : undefined}>{t('Analysis history')}</Link>
+      <Link className={source === 'backend' ? 'primary-button' : 'secondary-button'} to="/logs?source=backend" aria-current={source === 'backend' ? 'page' : undefined}>{t('Backend logs')}</Link>
+      <Link className={source === 'browser' ? 'primary-button' : 'secondary-button'} to="/logs?source=browser" aria-current={source === 'browser' ? 'page' : undefined}>{t('Browser diagnostics')}</Link>
+    </nav>
+    {source === 'browser' ? <BrowserLogs /> : source === 'backend' ? <BackendLogsPage /> : <AnalysisHistory />}
+  </>;
 }
+
+function AnalysisHistory() {
+  const {t, language} = useLanguage();
+  const snapshot = useSyncExternalStore(activityLog.subscribe, activityLog.getSnapshot);
+  const created = snapshot.entries.filter(entry => entry.event === 'analysis.created' && entry.runId);
+  const rows = created.map(entry => {
+    const latestStatus = snapshot.entries.find(item => item.runId === entry.runId && item.event === 'run.observed')?.status;
+    return {...entry, status: latestStatus || entry.status};
+  });
+  return <>
+    <PageHeader eyebrow={t('Planning archive')} title={t('Analysis history')} description={t('Review previous Daily and Monthly analysis runs.')} />
+    <p className="workflow-message">{t('History is saved in this browser from the latest 300 activity records. Run details link back to the original analysis.')}</p>
+    {(!snapshot.persistent || snapshot.warning) && <p className="workflow-message workflow-error" role="status">{t(snapshot.warning || 'Logs are available only in this tab because browser storage is unavailable.')}</p>}
+    <section className="panel logs-panel analysis-history-panel">
+      <div className="panel-heading">
+        <div><h2>{t('Past analyses')}</h2><p>{t('Most recent runs first')}</p></div>
+        <Link className="primary-button" to="/analysis">{t('New analysis')}</Link>
+      </div>
+      <div className="table-scroll">
+        <table className="data-table analysis-history-table">
+          <thead><tr>{['Analysis date', 'Period', 'Created', 'Status', 'Run ID'].map(label => <th key={label}>{t(label)}</th>)}</tr></thead>
+          <tbody>
+            {rows.map(row => <tr key={row.runId}>
+              <td>{row.asOfDate || t('Date unavailable')}</td>
+              <td>{t(row.runType === 'monthly' ? 'Monthly' : row.runType === 'daily' ? 'Daily' : 'Unknown')}</td>
+              <td><time dateTime={row.timestamp}>{new Date(row.timestamp).toLocaleString(language)}</time></td>
+              <td><Badge status={row.status || 'queued'} /></td>
+              <td><Link className="text-link" to={runPath(row.runId)}>{row.runId}</Link></td>
+            </tr>)}
+            {!rows.length && <tr><td colSpan="5" className="analysis-history-empty">{t('No saved analyses yet. New runs will appear here.')}</td></tr>}
+          </tbody>
+        </table>
+      </div>
+    </section>
+  </>;
+}
+
 function BrowserLogs() {
   const {t, language} = useLanguage();
   const snapshot = useSyncExternalStore(activityLog.subscribe, activityLog.getSnapshot);
