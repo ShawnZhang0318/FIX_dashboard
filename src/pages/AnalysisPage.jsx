@@ -1,9 +1,12 @@
-import { useEffect, useRef, useState } from "react";
-import { Link, useNavigate, useParams } from "react-router";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { Link, useNavigate, useParams, useSearchParams } from "react-router";
 import PageHeader from "../components/PageHeader.jsx";
 import { Feedback, Badge, Metric } from "../components/WorkflowUI.jsx";
 import { validateRunResults } from "../../frontend/contracts.js";
 import { useLanguage } from "../i18n.jsx";
+import { useResource } from "../useResource.js";
+import { latestDataDate, localToday } from "../../frontend/daily-data.js";
+import { isDate } from "../../frontend/requests.js";
 import {
   api,
   config,
@@ -15,16 +18,12 @@ import {
 
 const units = (value) => number(Number.isFinite(value) ? Math.ceil(value) : null);
 
-function localToday() {
-  const today = new Date();
-  return [today.getFullYear(), String(today.getMonth() + 1).padStart(2, "0"), String(today.getDate()).padStart(2, "0")].join("-");
-}
-
 export default function AnalysisPage() {
   const { runId } = useParams();
   return <AnalysisWorkspace key={runId || "new"} runId={runId} />;
 }
 function AnalysisWorkspace({ runId }) {
+  const [searchParams, setSearchParams] = useSearchParams();
   const { t } = useLanguage(),
     navigate = useNavigate();
   const monthlyRecommendationsAvailable = false;
@@ -36,7 +35,9 @@ function AnalysisWorkspace({ runId }) {
     [createError, setCreateError] = useState(null),
     [busy, setBusy] = useState(false),
     [revision, setRevision] = useState(0);
-  const analysisDate = run?.as_of_date || (config.mode === "mock" ? "2022-06-30" : localToday());
+  const dateState = useResource(useCallback(options => runId ? Promise.resolve([]) : api.getInventory({store_id: 'S001'}, options), [runId]));
+  const queryDate = searchParams.get('as_of_date');
+  const analysisDate = run?.as_of_date || (queryDate !== null ? queryDate : latestDataDate(dateState.data || []));
   const active = useRef(true),
     submitting = useRef(false);
   useEffect(() => {
@@ -85,7 +86,7 @@ function AnalysisWorkspace({ runId }) {
     !!runId && (!run || ["queued", "processing"].includes(run.status));
   async function create(e) {
     e.preventDefault();
-    if (submitting.current || createError?.writeUncertain) return;
+    if (submitting.current || createError?.writeUncertain || !isDate(analysisDate)) return;
     submitting.current = true;
     setBusy(true);
     setCreateError(null);
@@ -110,7 +111,7 @@ function AnalysisWorkspace({ runId }) {
       <PageHeader
         eyebrow={t("Daily demand planning")}
         title={t(runId ? "Analysis run" : "Analysis")}
-        description={t("Run a Daily analysis for today or a Monthly forecast for the next 30 days. Past analyses are in Logs.")}
+        description={t("Choose an observed data date for Daily analysis. Past analyses are in Logs.")}
       />
       <div className="analysis-grid">
         <section className="panel request-panel">
@@ -127,7 +128,7 @@ function AnalysisWorkspace({ runId }) {
                 onClick={() => setMode("daily")}
               >
                 <span className="analysis-mode-card__title">{t("Daily")}</span>
-                <span className="analysis-mode-card__summary">{t("Analyze today's demand and recommend replenishment")}</span>
+                <span className="analysis-mode-card__summary">{t("Analyze the selected day's demand and recommend replenishment")}</span>
                 <span className="analysis-mode-card__detail">{t(config.mode === "mock" ? "Demo data date" : "Analysis date")}: <strong>{analysisDate}</strong></span>
               </button>
               <button
@@ -143,8 +144,13 @@ function AnalysisWorkspace({ runId }) {
               </button>
             </div>
             {(config.mode === "mock" || !monthlyRecommendationsAvailable) && <p className="analysis-mode-note">{t("Monthly recommendations are not available yet. The current API monthly mode is a historical anomaly scan, so it will not be started here.")}</p>}
-            <p className="analysis-data-note">{t("Daily analysis needs a complete snapshot for all products today and 29 days of history. If required data is missing, the API will reject the request.")}</p>
+            <p className="analysis-data-note">{t("Daily analysis requires all products on the selected date and 29 consecutive dates including that date. Missing observations must be entered first.")}</p>
             <div className="request-fields">
+              <label className="field-group">{t('Analysis date')}
+                <input className="field-value" type="date" required max={localToday()} value={analysisDate}
+                  disabled={!!runId || busy || !!createError?.writeUncertain}
+                  onChange={e => setSearchParams({as_of_date: e.target.value}, {replace: true})} />
+              </label>
               <label className="field-group">
                 {t("Store")}
                 <input className="field-value" disabled value="S001" />
@@ -168,7 +174,7 @@ function AnalysisWorkspace({ runId }) {
               )}
             </div>
             <div className="request-footer">
-              <button className="primary-button" disabled={running || busy || createError?.writeUncertain || (mode === "monthly" && !monthlyRecommendationsAvailable)}>
+              <button className="primary-button" disabled={!isDate(analysisDate) || running || busy || createError?.writeUncertain || (mode === "monthly" && !monthlyRecommendationsAvailable)}>
                 {t(
                   busy
                     ? "Creating…"
@@ -179,6 +185,7 @@ function AnalysisWorkspace({ runId }) {
               </button>
             </div>
           </form>
+          {!runId && <Feedback error={dateState.error} loading={dateState.loading} reload={dateState.reload} />}
           <Feedback error={createError} />
         </section>
         <section className="panel run-status-panel">
