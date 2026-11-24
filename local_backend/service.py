@@ -124,6 +124,16 @@ def snapshots(store_id: Literal["S001"] = "S001", product_id: str | None = None,
         return [s.row_data(r) for r in db.execute(sql+" ORDER BY snapshot_date,product_id", params)]
 
 
+@app.get("/snapshots/latest")
+def latest_snapshot(store_id: Literal["S001"] = "S001"):
+    """Newest snapshotted date for the store; drives dashboard date defaults."""
+    with s.connect() as db:
+        row = db.execute("SELECT MAX(snapshot_date) FROM snapshots WHERE store_id=?", (store_id,)).fetchone()
+    value = row[0] if row else None
+    return {"store_id": store_id,
+            "snapshot_date": value.isoformat() if hasattr(value, "isoformat") else value}
+
+
 @app.post("/snapshots", status_code=201)
 def ingest(payload: SnapshotBatch, request: Request):
     try:

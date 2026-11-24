@@ -18,6 +18,10 @@ export function createLiveApi(options) {
       const selected = prepareFilters('snapshots', filters);
       return read('getSnapshots', [selected], '/snapshots?' + query(selected), context);
     },
+    async getLatestSnapshot(filters = {}, context) {
+      const selected = {store_id: prepareFilters('snapshots', {store_id: filters.store_id}).store_id};
+      return read('getLatestSnapshot', [selected], '/snapshots/latest?' + query(selected), context);
+    },
     async getInventory(filters = {}, context) {
       const selected = prepareFilters('inventory', filters);
       return read('getInventory', [selected], '/inventory?' + query(selected), context);

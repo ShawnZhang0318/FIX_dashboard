@@ -5,6 +5,7 @@ import { newRequestId } from './activity-log.js';
 const endpoints = {
   ingestSnapshots: ['POST', '/snapshots'],
   getSnapshots: ['GET', '/snapshots'],
+  getLatestSnapshot: ['GET', '/snapshots/latest'],
   getInventoryItem: ['GET', '/inventory/:store_id/:product_id'],
   getInventory: ['GET', '/inventory'],
   createAnalysisRun: ['POST', '/analysis-runs'],
@@ -57,6 +58,7 @@ export function createApiGateway(adapter, {log, mode, now = () => Date.now(), uu
   const api = {
     ingestSnapshots: (body, options) => call('ingestSnapshots', [body], options),
     getSnapshots: (filters = {}, options) => call('getSnapshots', [filters], options),
+    getLatestSnapshot: (filters = {}, options) => call('getLatestSnapshot', [filters], options),
     getInventoryItem: (storeId, productId, options) => call('getInventoryItem', [storeId, productId], options),
     getInventory: (filters = {}, options) => call('getInventory', [filters], options),
     createAnalysisRun: (body, options) => call('createAnalysisRun', [body], options),

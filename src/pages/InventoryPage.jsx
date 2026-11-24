@@ -6,6 +6,7 @@ import { useLanguage } from "../i18n.jsx";
 import { useResource } from "../useResource.js";
 import { api, number } from "../workflow.js";
 import SnapshotTransferPanel from "../components/SnapshotTransferPanel.jsx";
+import DailyUpdatePanel from "../components/DailyUpdatePanel.jsx";
 export default function InventoryPage() {
   const { t } = useLanguage(),
     [search, setSearch] = useState("");
@@ -107,6 +108,7 @@ export default function InventoryPage() {
           </section>
         </>
       )}
+      <DailyUpdatePanel onImported={state.reload} />
       <SnapshotTransferPanel onImported={state.reload} />
     </>
   );

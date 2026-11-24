@@ -8,8 +8,16 @@
 // existing mock demo until the team configures a hosted public API here.
 const hostedApiBaseUrl = "";
 const localIntegration = ['127.0.0.1', 'localhost'].includes(globalThis.location?.hostname);
+// Loopback only: ?api=http://127.0.0.1:8010 connects the local backend when the
+// default port is busy. Ignored on hosted deployments; never carries credentials.
+const localApiUrl = localIntegration
+  ? new URLSearchParams(globalThis.location?.search || '').get('api')
+  : null;
+const localApiBaseUrl = localApiUrl && /^https?:\/\/.+/.test(localApiUrl)
+  ? localApiUrl.replace(/\/+$/, '')
+  : 'http://127.0.0.1:8000';
 globalThis.FIX_CONFIG=localIntegration
-  ? {mode:'live',apiBaseUrl:'http://127.0.0.1:8000',sendRequestId:true,backendLogsBaseUrl:null,
+  ? {mode:'live',apiBaseUrl:localApiBaseUrl,sendRequestId:true,backendLogsBaseUrl:null,
      localIntegration:true,defaultAnalysisDate:'2023-11-15',minimumAnalysisDate:'2023-09-01'}
   : hostedApiBaseUrl
     ? {mode:'live',apiBaseUrl:hostedApiBaseUrl.replace(/\/+$/, ''),sendRequestId:true,backendLogsBaseUrl:null}
