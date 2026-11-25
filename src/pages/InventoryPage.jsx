@@ -7,7 +7,9 @@ import { useResource } from "../useResource.js";
 import { api, config, number } from "../workflow.js";
 import SnapshotTransferPanel from "../components/SnapshotTransferPanel.jsx";
 import DailyDataForm from "../components/DailyDataForm.jsx";
+import DailyUpdatePanel from "../components/DailyUpdatePanel.jsx";
 import { loadInventoryDay, localToday } from "../../frontend/daily-data.js";
+
 export default function InventoryPage() {
   const { t } = useLanguage(),
     [search, setSearch] = useState("");
@@ -130,6 +132,7 @@ export default function InventoryPage() {
           </section>
         </>
       )}
+      {!editing && <DailyUpdatePanel onImported={state.reload} />}
       {!editing && <SnapshotTransferPanel onImported={state.reload} />}
     </>
   );

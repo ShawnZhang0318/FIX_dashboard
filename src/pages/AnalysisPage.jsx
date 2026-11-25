@@ -343,7 +343,52 @@ function Results({ data, runId }) {
       </div>
       <section className="panel inventory-panel">
         <div className="panel-heading">
-          <h2>{t("Forecast results")}</h2>
+          <div>
+            <h2>{t("Daily sales predictions")}</h2>
+            <p>{t("Cumulative demand per product over its lead-time horizon at P50 and P90. The model does not forecast a single day in isolation.")}</p>
+          </div>
+        </div>
+        <div className="table-scroll">
+          <table className="data-table">
+            <thead>
+              <tr>
+                {[
+                  "Product ID",
+                  "On hand",
+                  "Forecast horizon",
+                  "Demand forecast (P50)",
+                  "Demand forecast (P90)",
+                  "Suggested quantity",
+                ].map((x) => (
+                  <th key={x}>{t(x)}</th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {rows.map((x) => (
+                <tr key={x.product_id}>
+                  <td>{x.product_id}</td>
+                  <td>{units(x.inventory_at_prediction)}</td>
+                  <td>
+                    {number(x.horizon_days)} {t("days")}
+                  </td>
+                  <td>{units(x.predicted_demand_p50 ?? x.predicted_demand_point)}</td>
+                  <td>{units(x.predicted_demand_p90)}</td>
+                  <td>{units(x.recommended_order_quantity)}</td>
+                </tr>
+              ))}
+              {!rows.length && (
+                <tr>
+                  <td colSpan="6">{t("No forecast results were saved for this run.")}</td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+      </section>
+      <section className="panel inventory-panel">
+        <div className="panel-heading">
+          <h2>{t("Forecast exceptions")}</h2>
           <Link className="secondary-button" to={queuePath(runId)}>
             {t("Review exceptions")}
           </Link>

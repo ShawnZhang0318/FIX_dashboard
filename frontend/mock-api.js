@@ -52,6 +52,10 @@ export function createMockApi({storage,now=()=>Date.now(),uuid=()=>crypto.random
    const f=prepareFilters('snapshots',filters);
    return snapshots().filter(x=>(!f.product_id||x.product_id===f.product_id)&&(!f.from||x.snapshot_date>=f.from)&&(!f.to||x.snapshot_date<=f.to));
   },
+  async getLatestSnapshot(filters={}){
+   prepareFilters('snapshots',{store_id:filters.store_id});
+   return {store_id:'S001',snapshot_date:'2022-06-30'};
+  },
   async getInventory(filters={}){prepareFilters('inventory',filters);return inventory.map(p=>({product_id:p.product_id,name:p.name,category:p.category,store_id:'S001',on_hand_quantity:p.stock,lead_time_days:p.horizon,snapshot_date:'2022-06-30',source_snapshot_id:`synthetic-S001-${p.product_id}-2022-06-30`}));},
   async getInventoryItem(storeId,productId){
    const rows=await this.getInventory({store_id:storeId}),row=rows.find(x=>x.product_id===productId);

@@ -117,6 +117,10 @@ export function validateResponse(operation, data, args = []) {
   if (operation === 'getSnapshots') {
     array(data, 'snapshots', (x, p) => snapshot(x, p, first));
     unique(data, x => `${x.store_id}/${x.product_id}/${x.snapshot_date}`, 'snapshots (duplicate)');
+  } else if (operation === 'getLatestSnapshot') {
+    object(data, 'latest');
+    check(data.store_id === STORE_ID, 'latest.store_id');
+    if (data.snapshot_date != null) date(data.snapshot_date, 'latest.snapshot_date');
   } else if (operation === 'ingestSnapshots') {
     object(data, 'ingestion');
     check(data.inserted_count === first.snapshots.length, 'ingestion.inserted_count (atomic batch)');
