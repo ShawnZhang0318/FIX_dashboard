@@ -6,12 +6,7 @@ import { useLanguage } from "../i18n.jsx";
 import { useResource } from "../useResource.js";
 import { api, config, number } from "../workflow.js";
 import SnapshotTransferPanel from "../components/SnapshotTransferPanel.jsx";
-<<<<<<< HEAD
-import DailyUpdatePanel from "../components/DailyUpdatePanel.jsx";
-=======
-import DailyDataForm from "../components/DailyDataForm.jsx";
-import { loadInventoryDay, localToday } from "../../frontend/daily-data.js";
->>>>>>> dcece0f0ba4daceb05d77eff1abd4365943f7a87
+
 export default function InventoryPage() {
   const { t } = useLanguage(),
     [search, setSearch] = useState("");
@@ -135,12 +130,9 @@ export default function InventoryPage() {
           </section>
         </>
       )}
-<<<<<<< HEAD
       <DailyUpdatePanel onImported={state.reload} />
       <SnapshotTransferPanel onImported={state.reload} />
-=======
-      {!editing && <SnapshotTransferPanel onImported={state.reload} />}
->>>>>>> dcece0f0ba4daceb05d77eff1abd4365943f7a87
+      {!editing && <SnapshotTransferPanel onImported={state.reload} />} 
     </>
   );
 }

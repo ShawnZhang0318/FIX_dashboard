@@ -36,33 +36,22 @@ function AnalysisWorkspace({ runId }) {
     [busy, setBusy] = useState(false),
     [selectedDate, setSelectedDate] = useState(null),
     [revision, setRevision] = useState(0);
-<<<<<<< HEAD
-  // Live default: the newest stored snapshot date, so an appended daily update
-  // becomes the suggested analysis cutoff. Mock stays on its fixed fixture date.
-  useEffect(() => {
-    if (config.mode === "mock") return;
-    let cancelled = false;
-    api.getLatestSnapshot({ store_id: "S001" })
-      .then((latest) => {
-        if (!cancelled && latest?.snapshot_date) setSelectedDate(latest.snapshot_date);
-      })
-      .catch(() => {
-        /* Keep the configured default when the backend is unreachable. */
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, []);
-  const analysisDate =
-    run?.as_of_date ||
-    (config.mode === "mock"
-      ? "2022-06-30"
-      : selectedDate || config.defaultAnalysisDate || localToday());
-=======
-  const dateState = useResource(useCallback(options => runId ? Promise.resolve([]) : api.getInventory({store_id: 'S001'}, options), [runId]));
-  const queryDate = searchParams.get('as_of_date');
-  const analysisDate = run?.as_of_date || (queryDate !== null ? queryDate : latestDataDate(dateState.data || []));
->>>>>>> dcece0f0ba4daceb05d77eff1abd4365943f7a87
+     // Live default: the newest stored snapshot date, so an appended daily update
+     // becomes the suggested analysis cutoff. Mock stays on its fixed fixture date.
+     useEffect(() => {
+       if (config.mode === "mock") return;
+       let cancelled = false;
+       api.getLatestSnapshot({ store_id: "S001" })
+         .then((latest) => {
+           if (!cancelled && latest?.snapshot_date) setSelectedDate(latest.snapshot_date);
+         })
+         .catch(() => {
+           /* Keep the configured default when the backend is unreachable. */
+         });
+       return () => {
+         cancelled = true;
+       };
+     }, []);
   const active = useRef(true),
     submitting = useRef(false);
   useEffect(() => {
