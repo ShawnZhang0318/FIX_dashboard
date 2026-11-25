@@ -1,8 +1,31 @@
 import { isDate, prepareSnapshotBatch, snapshotFields } from './requests.js';
 
-export function localToday() {
-  const now = new Date();
+export function localToday(now = new Date()) {
   return [now.getFullYear(), String(now.getMonth() + 1).padStart(2, '0'), String(now.getDate()).padStart(2, '0')].join('-');
+}
+
+// Recheck on wake/focus and clock changes as well as at the next local midnight.
+export function observeSystemDate(onDate, {
+  now = () => new Date(), setTimer = setTimeout, clearTimer = clearTimeout,
+  focusTarget = globalThis.window, visibilityTarget = globalThis.document,
+} = {}) {
+  let timer, closed = false;
+  function update() {
+    if (closed) return;
+    clearTimer(timer);
+    const date = now();
+    onDate(localToday(date));
+    const midnight = new Date(date.getFullYear(), date.getMonth(), date.getDate() + 1);
+    timer = setTimer(update, Math.min(30000, midnight.getTime() - date.getTime() + 10));
+  }
+  focusTarget?.addEventListener('focus', update);
+  visibilityTarget?.addEventListener('visibilitychange', update);
+  update();
+  return () => {
+    closed = true; clearTimer(timer);
+    focusTarget?.removeEventListener('focus', update);
+    visibilityTarget?.removeEventListener('visibilitychange', update);
+  };
 }
 
 export const latestDataDate = rows => rows.map(row => row.snapshot_date).sort().at(-1) || '';

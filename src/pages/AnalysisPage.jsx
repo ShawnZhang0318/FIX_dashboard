@@ -1,11 +1,11 @@
-import { useCallback, useEffect, useRef, useState } from "react";
-import { Link, useNavigate, useParams, useSearchParams } from "react-router";
+import { useEffect, useRef, useState } from "react";
+import { Link, useNavigate, useParams } from "react-router";
 import PageHeader from "../components/PageHeader.jsx";
 import { Feedback, Badge, Metric } from "../components/WorkflowUI.jsx";
 import { validateRunResults } from "../../frontend/contracts.js";
 import { useLanguage } from "../i18n.jsx";
-import { useResource } from "../useResource.js";
-import { latestDataDate, localToday } from "../../frontend/daily-data.js";
+import { useSystemDate } from "../useSystemDate.js";
+import { localToday } from "../../frontend/daily-data.js";
 import { isDate } from "../../frontend/requests.js";
 import {
   api,
@@ -23,7 +23,7 @@ export default function AnalysisPage() {
   return <AnalysisWorkspace key={runId || "new"} runId={runId} />;
 }
 function AnalysisWorkspace({ runId }) {
-  const [searchParams, setSearchParams] = useSearchParams();
+  const systemDate = useSystemDate();
   const { t } = useLanguage(),
     navigate = useNavigate();
   const monthlyRecommendationsAvailable = false;
@@ -35,9 +35,8 @@ function AnalysisWorkspace({ runId }) {
     [createError, setCreateError] = useState(null),
     [busy, setBusy] = useState(false),
     [revision, setRevision] = useState(0);
-  const dateState = useResource(useCallback(options => runId ? Promise.resolve([]) : api.getInventory({store_id: 'S001'}, options), [runId]));
-  const queryDate = searchParams.get('as_of_date');
-  const analysisDate = run?.as_of_date || (queryDate !== null ? queryDate : latestDataDate(dateState.data || []));
+  // Stored runs retain their original date. Only the explicit synthetic demo uses a fixed fixture date.
+  const analysisDate = runId ? (run?.as_of_date || '') : config.mode === 'mock' ? '2022-06-30' : systemDate;
   const active = useRef(true),
     submitting = useRef(false);
   useEffect(() => {
@@ -86,7 +85,7 @@ function AnalysisWorkspace({ runId }) {
     !!runId && (!run || ["queued", "processing"].includes(run.status));
   async function create(e) {
     e.preventDefault();
-    if (submitting.current || createError?.writeUncertain || !isDate(analysisDate)) return;
+    if (runId || submitting.current || createError?.writeUncertain || !isDate(analysisDate)) return;
     submitting.current = true;
     setBusy(true);
     setCreateError(null);
@@ -94,7 +93,8 @@ function AnalysisWorkspace({ runId }) {
       const data = await api.createAnalysisRun({
         store_id: "S001",
         run_type: mode,
-        as_of_date: analysisDate,
+        // Read the clock again at submission, even after a sleeping tab or midnight rollover.
+        as_of_date: config.mode === 'mock' ? '2022-06-30' : localToday(),
         scenario,
       });
       if (!data?.analysis_run?.id) throw Error("Missing analysis_run.id");
@@ -111,7 +111,7 @@ function AnalysisWorkspace({ runId }) {
       <PageHeader
         eyebrow={t("Daily demand planning")}
         title={t(runId ? "Analysis run" : "Analysis")}
-        description={t("Choose an observed data date for Daily analysis. Past analyses are in Logs.")}
+        description={t(runId ? 'This run retains its original analysis date. Start a new analysis to use today’s date.' : "Run a Daily analysis for today. Past analyses are in Logs.")}
       />
       <div className="analysis-grid">
         <section className="panel request-panel">
@@ -124,18 +124,18 @@ function AnalysisWorkspace({ runId }) {
                 className={`analysis-mode-card${mode === "daily" ? " is-selected" : ""}`}
                 type="button"
                 aria-pressed={mode === "daily"}
-                disabled={running || busy}
+                disabled={!!runId || busy}
                 onClick={() => setMode("daily")}
               >
                 <span className="analysis-mode-card__title">{t("Daily")}</span>
-                <span className="analysis-mode-card__summary">{t("Analyze the selected day's demand and recommend replenishment")}</span>
+                <span className="analysis-mode-card__summary">{t(runId ? 'Demand and replenishment for this run’s analysis date' : "Analyze today's demand and recommend replenishment")}</span>
                 <span className="analysis-mode-card__detail">{t(config.mode === "mock" ? "Demo data date" : "Analysis date")}: <strong>{analysisDate}</strong></span>
               </button>
               <button
                 className={`analysis-mode-card${mode === "monthly" ? " is-selected" : ""}`}
                 type="button"
                 aria-pressed={mode === "monthly"}
-                disabled={running || busy || config.mode === "mock"}
+                disabled={!!runId || busy || config.mode === "mock"}
                 onClick={() => setMode("monthly")}
               >
                 <span className="analysis-mode-card__title">{t("Monthly")}</span>
@@ -144,18 +144,13 @@ function AnalysisWorkspace({ runId }) {
               </button>
             </div>
             {(config.mode === "mock" || !monthlyRecommendationsAvailable) && <p className="analysis-mode-note">{t("Monthly recommendations are not available yet. The current API monthly mode is a historical anomaly scan, so it will not be started here.")}</p>}
-            <p className="analysis-data-note">{t("Daily analysis requires all products on the selected date and 29 consecutive dates including that date. Missing observations must be entered first.")}</p>
+            <p className="analysis-data-note">{t(config.mode === 'mock' ? 'Synthetic demo uses the fixed fixture date 2022-06-30. Live analysis follows your computer’s local date.' : runId ? 'This run retains its original analysis date. Start a new analysis to use today’s date.' : 'Daily analysis follows your computer’s local date and requires all products today with 29 consecutive dates including today. Missing data is rejected by the API.')}</p>
             <div className="request-fields">
-              <label className="field-group">{t('Analysis date')}
-                <input className="field-value" type="date" required max={localToday()} value={analysisDate}
-                  disabled={!!runId || busy || !!createError?.writeUncertain}
-                  onChange={e => setSearchParams({as_of_date: e.target.value}, {replace: true})} />
-              </label>
               <label className="field-group">
                 {t("Store")}
                 <input className="field-value" disabled value="S001" />
               </label>
-              {config.mode === "mock" && (
+              {config.mode === "mock" && !runId && (
                 <label className="field-group">
                   {t("Demo scenario")}
                   <select
@@ -174,7 +169,7 @@ function AnalysisWorkspace({ runId }) {
               )}
             </div>
             <div className="request-footer">
-              <button className="primary-button" disabled={!isDate(analysisDate) || running || busy || createError?.writeUncertain || (mode === "monthly" && !monthlyRecommendationsAvailable)}>
+              {runId ? <Link className="primary-button" to="/analysis">{t('New analysis')}</Link> : <button className="primary-button" disabled={!isDate(analysisDate) || running || busy || createError?.writeUncertain || (mode === "monthly" && !monthlyRecommendationsAvailable)}>
                 {t(
                   busy
                     ? "Creating…"
@@ -182,10 +177,9 @@ function AnalysisWorkspace({ runId }) {
                       ? "Analysis in progress"
                       : mode === "monthly" ? "Monthly Forecast Coming Soon" : "Run Daily Analysis",
                 )}
-              </button>
+              </button>}
             </div>
           </form>
-          {!runId && <Feedback error={dateState.error} loading={dateState.loading} reload={dateState.reload} />}
           <Feedback error={createError} />
         </section>
         <section className="panel run-status-panel">

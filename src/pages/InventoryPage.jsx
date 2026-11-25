@@ -17,7 +17,6 @@ export default function InventoryPage() {
   const rows = state.data?.snapshots || [], date = state.data?.date || '';
   const inventory = state.data?.inventory || [];
   const leadTimes = new Map(inventory.map(row => [row.product_id, row.lead_time_days]));
-  const analysisLink = date ? `/analysis?${new URLSearchParams({as_of_date: date})}` : '/analysis';
   function onSaved(day, count) {
     setEditing(false); setSaved({date: day, count}); setSelectedDate(day); state.reload();
   }
@@ -35,8 +34,8 @@ export default function InventoryPage() {
           "Review stock and daily sales by data date, or record a new day's observations.",
         )}
         actions={
-          <Link className="primary-button" to={analysisLink}>
-            {t("Analyze this date")}
+          <Link className="primary-button" to="/analysis">
+            {t("Go to Analysis")}
           </Link>
         }
       />
