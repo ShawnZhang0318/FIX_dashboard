@@ -7,6 +7,7 @@ import traceback
 from datetime import date, datetime, timezone
 from uuid import uuid4
 from contextlib import contextmanager
+from threading import Lock
 
 ROOT = Path(__file__).resolve().parents[1]
 STATE = Path(os.environ.get("FIX_LOCAL_STATE", ROOT / ".local-integration")).resolve()
@@ -95,15 +96,36 @@ def begin_write(db):
     db.execute("BEGIN" if is_postgres() else "BEGIN IMMEDIATE")
 
 
+_pool = None
+_pool_lock = Lock()
+
+
+def _connection_pool():
+    """Reuse Supabase connections; opening one per request costs ~4s on the pooler."""
+    global _pool
+    with _pool_lock:
+        if _pool is None:
+            from psycopg_pool import ConnectionPool
+            from psycopg.rows import tuple_row
+
+            url = DATABASE_URL.replace("postgres://", "postgresql://", 1)
+            _pool = ConnectionPool(url, min_size=1, max_size=8,
+                                   kwargs={"row_factory": tuple_row, "prepare_threshold": None})
+        return _pool
+
+
 @contextmanager
 def connect():
     if is_postgres():
-        import psycopg
-        from psycopg.rows import tuple_row
-
-        url = DATABASE_URL.replace("postgres://", "postgresql://", 1)
-        with psycopg.connect(url, row_factory=tuple_row, prepare_threshold=None) as connection:
+        connection = _connection_pool().getconn()
+        try:
             yield _PostgresConnection(connection)
+            connection.commit()
+        except BaseException:
+            connection.rollback()
+            raise
+        finally:
+            _connection_pool().putconn(connection)
         return
     STATE.mkdir(parents=True, exist_ok=True)
     db = sqlite3.connect(DB_PATH, timeout=15)
@@ -204,17 +226,21 @@ def row_data(row):
 
 
 def run_data(db, run_id):
-    row = db.execute("SELECT * FROM runs WHERE id=?", (run_id,)).fetchone()
+    # Single statement so run and job are read from one snapshot; two queries can
+    # straddle a worker state change (READ COMMITTED) and report a mismatched pair.
+    if is_postgres():
+        job_id_sql = "SELECT id FROM jobs WHERE run_id=runs.id ORDER BY created_at DESC,id DESC LIMIT 1"
+        job_status_sql = "SELECT status FROM jobs WHERE run_id=runs.id ORDER BY created_at DESC,id DESC LIMIT 1"
+    else:
+        job_id_sql = "SELECT id FROM jobs WHERE run_id=runs.id"
+        job_status_sql = "SELECT status FROM jobs WHERE run_id=runs.id"
+    row = db.execute(f"""SELECT runs.*, ({job_id_sql}) AS job_id, ({job_status_sql}) AS job_status
+                         FROM runs WHERE runs.id=?""", (run_id,)).fetchone()
     if not row:
         return None
     data = row_data(row)
     data["status"] = row["status"]
-    if is_postgres():
-        job = db.execute("""SELECT id,status FROM jobs WHERE run_id=?
-                            ORDER BY created_at DESC,id DESC LIMIT 1""", (run_id,)).fetchone()
-    else:
-        job = db.execute("SELECT id,status FROM jobs WHERE run_id=?", (run_id,)).fetchone()
-    data["job"] = dict(job)
+    data["job"] = {"id": row["job_id"], "status": row["job_status"]}
     return data
 
 
