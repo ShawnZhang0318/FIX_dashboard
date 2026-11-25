@@ -48,9 +48,9 @@ export default function SnapshotTransferPanel({onImported}) {
       </fieldset>
     </form>
     {rows && <div className="table-scroll"><table className="data-table">
-      <thead><tr>{['Product ID','Snapshot date','On hand','Source snapshot'].map(label=><th key={label}>{t(label)}</th>)}</tr></thead>
-      <tbody>{rows.map(row=><tr key={row.id}><td>{row.product_id}</td><td>{row.snapshot_date}</td><td>{number(row.inventory_level)}</td><td>{row.id}</td></tr>)}
-        {!rows.length && <tr><td colSpan="4">{t('No matching records.')}</td></tr>}
+      <thead><tr>{['Product ID','Snapshot date','Observed stock','Daily units sold','Source snapshot'].map(label=><th key={label}>{t(label)}</th>)}</tr></thead>
+      <tbody>{rows.map(row=><tr key={row.id}><td>{row.product_id}</td><td>{row.snapshot_date}</td><td>{number(row.inventory_level)}</td><td>{number(row.units_sold)}</td><td>{row.id}</td></tr>)}
+        {!rows.length && <tr><td colSpan="5">{t('No matching records.')}</td></tr>}
       </tbody>
     </table></div>}
     <form className="workflow-form" onSubmit={ingest}>

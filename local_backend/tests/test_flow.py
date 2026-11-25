@@ -128,6 +128,44 @@ def test_atomic_ingestion_duplicate_rollback_and_historical_current_view(api):
     assert post([invalid]).status_code == 422
 
 
+def test_new_daily_observations_update_date_sales_and_stock_without_changing_frozen_run(api):
+    seed()
+    old_run = create(api)
+    tomorrow = CUTOFF + timedelta(days=1)
+    rows = [snapshot(product, tomorrow, stock=75, sales=23)
+            for product in s.MANIFEST["product_id_categories"]]
+    for row in rows:
+        row["source_reference"] = "manual-entry; template=test-fixture"
+    body = {"source_file_sha256": "b" * 64, "snapshots": rows}
+    response = api.post("/snapshots", json=body)
+    assert response.status_code == 201, response.text
+    assert response.json()["inserted_count"] == 20
+    current = api.get("/inventory").json()
+    assert all(row["snapshot_date"] == str(tomorrow) and row["on_hand_quantity"] == 75 for row in current)
+    observed = api.get("/snapshots", params={"from": str(tomorrow), "to": str(tomorrow)}).json()
+    assert len(observed) == 20 and all(row["units_sold"] == 23 for row in observed)
+    assert all(row["source_file_sha256"] == "b" * 64 for row in observed)
+    old = api.get("/snapshots", params={"from": str(CUTOFF), "to": str(CUTOFF)}).json()
+    assert len(old) == 20 and all(row["units_sold"] == 10 for row in old)
+    # Re-submission cannot overwrite history or subtract the 23 units a second time.
+    assert api.post("/snapshots", json=body).status_code == 409
+    assert api.get("/inventory").json() == current
+    old_model = StubAI()
+    worker.process(worker.claim(), old_model)
+    assert api.get(f"/analysis-runs/{old_run}").json()["status"] == "completed"
+    assert all(history[-1]["date"] == str(CUTOFF) and history[-1]["units_sold"] == 10 for history, _ in old_model.calls)
+    response = api.post("/analysis-runs", json={"store_id": "S001", "run_type": "daily", "as_of_date": str(tomorrow)})
+    assert response.status_code == 202, response.text
+    new_model = StubAI()
+    worker.process(worker.claim(), new_model)
+    assert len(new_model.calls) == 20
+    assert all(len(history) == 29 and history[-1]["date"] == str(tomorrow) and history[-1]["units_sold"] == 23
+               for history, _ in new_model.calls)
+    results = api.get(f"/analysis-runs/{response.json()['analysis_run']['id']}/results").json()
+    assert results["status"] == "completed"
+    assert all(row["inventory_at_prediction"] == 75 for row in results["results"])
+
+
 def test_coverage_and_model_cutoff(api):
     assert api.post("/analysis-runs", json={"store_id": "S001", "run_type": "daily", "as_of_date": "2022-06-30"}).status_code == 422
     assert api.post("/analysis-runs", json={"store_id": "S002", "run_type": "daily", "as_of_date": str(CUTOFF)}).status_code == 422
