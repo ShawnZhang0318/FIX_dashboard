@@ -37,11 +37,14 @@ function AnalysisWorkspace({ runId }) {
     [revision, setRevision] = useState(0);
   // Stored runs retain their original date. Only the explicit synthetic demo uses a fixed fixture date.
   // A live daily run demands a complete snapshot plus 29 days of history, and today is written at
-  // store close, so the cutoff is the newest stored date: the wall clock would be rejected with 422.
+  // store close, so the cutoff is the newest date the API reports as runnable (cutoff_date), and the
+  // wall clock would be rejected with 422.
   const spanState = useResource(useCallback(options =>
     config.mode === 'live' && !runId ? api.getLatestSnapshot({store_id: 'S001'}, options) : Promise.resolve(null),
   [runId]));
-  const latestStoredDate = config.mode === 'live' && !runId ? (spanState.data?.snapshot_date || '') : '';
+  const latestStoredDate = config.mode === 'live' && !runId
+    ? (spanState.data?.cutoff_date || spanState.data?.snapshot_date || '')
+    : '';
   const analysisDate = runId ? (run?.as_of_date || '') : config.mode === 'mock' ? '2022-06-30' : latestStoredDate;
   const active = useRef(true),
     submitting = useRef(false);

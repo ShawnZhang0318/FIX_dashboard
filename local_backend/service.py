@@ -133,16 +133,32 @@ def snapshots(store_id: Literal["S001"] = "S001", product_id: str | None = None,
 
 @app.get("/snapshots/latest")
 def latest_snapshot(store_id: Literal["S001"] = "S001"):
-    """First and newest snapshotted dates; the UI bounds cutoff pickers with them."""
-    with s.connect() as db:
-        row = db.execute("SELECT MIN(snapshot_date), MAX(snapshot_date) FROM snapshots WHERE store_id=?",
-                         (store_id,)).fetchone()
-    first, last = row if row else (None, None)
-
+    """First and newest snapshotted dates, plus the newest date a daily run can actually use."""
     def iso(value):
         return value.isoformat() if hasattr(value, "isoformat") else value
 
-    return {"store_id": store_id, "snapshot_date": iso(last), "first_date": iso(first)}
+    with s.connect() as db:
+        row = db.execute("SELECT MIN(snapshot_date), MAX(snapshot_date) FROM snapshots WHERE store_id=?",
+                         (store_id,)).fetchone()
+        # Dates where every product has been recorded, newest first.
+        complete = {iso(r[0]) for r in db.execute(
+            """SELECT snapshot_date FROM snapshots WHERE store_id=?
+               GROUP BY snapshot_date HAVING COUNT(DISTINCT product_id)=?""",
+            (store_id, len(s.MANIFEST["product_id_categories"])))}
+    first, last = row if row else (None, None)
+    # The newest date is often a partially imported day (or an open sales day), which
+    # create_run rejects. Advertise the newest date that already has its full 29-day window
+    # instead of one that would fail with 422.
+    cutoff = None
+    for day in sorted(complete, reverse=True):
+        if day < s.MANIFEST["earliest_honest_backtest_origin"]:
+            break
+        base = date.fromisoformat(day)
+        if all((base - timedelta(days=n)).isoformat() in complete for n in range(29)):
+            cutoff = day
+            break
+    return {"store_id": store_id, "snapshot_date": iso(last), "first_date": iso(first),
+            "cutoff_date": cutoff}
 
 
 @app.post("/snapshots", status_code=201)
