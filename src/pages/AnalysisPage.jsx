@@ -1,11 +1,11 @@
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router";
 import PageHeader from "../components/PageHeader.jsx";
 import { Feedback, Badge, Metric } from "../components/WorkflowUI.jsx";
 import { validateRunResults } from "../../frontend/contracts.js";
 import { useLanguage } from "../i18n.jsx";
+import { useResource } from "../useResource.js";
 import { useSystemDate } from "../useSystemDate.js";
-import { localToday } from "../../frontend/daily-data.js";
 import { isDate } from "../../frontend/requests.js";
 import {
   api,
@@ -36,19 +36,15 @@ function AnalysisWorkspace({ runId }) {
     [busy, setBusy] = useState(false),
     [revision, setRevision] = useState(0);
   // Stored runs retain their original date. Only the explicit synthetic demo uses a fixed fixture date.
-  const analysisDate = runId ? (run?.as_of_date || '') : config.mode === 'mock' ? '2022-06-30' : systemDate;
+  // A live daily run demands a complete snapshot plus 29 days of history, and today is written at
+  // store close, so the cutoff is the newest stored date: the wall clock would be rejected with 422.
+  const spanState = useResource(useCallback(options =>
+    config.mode === 'live' && !runId ? api.getLatestSnapshot({store_id: 'S001'}, options) : Promise.resolve(null),
+  [runId]));
+  const latestStoredDate = config.mode === 'live' && !runId ? (spanState.data?.snapshot_date || '') : '';
+  const analysisDate = runId ? (run?.as_of_date || '') : config.mode === 'mock' ? '2022-06-30' : latestStoredDate;
   const active = useRef(true),
     submitting = useRef(false);
-  const dateState = useResource(useCallback(options => runId ? Promise.resolve([]) : api.getInventory({store_id: 'S001'}, options), [runId]));
-  const spanState = useResource(useCallback(options => runId ? Promise.resolve(null) : api.getLatestSnapshot({store_id: 'S001'}, options), [runId]));
-  const queryDate = searchParams.get('as_of_date');
-  // The cutoff must be a date with a complete snapshot. Bound the field to the
-  // stored span so a future or pre-history date cannot produce a 422.
-  const span = spanState.data;
-  const analysisDate = run?.as_of_date
-    || (queryDate !== null ? queryDate : (span?.snapshot_date || latestDataDate(dateState.data || [])));
-  const minDate = span?.first_date;
-  const maxDate = span?.snapshot_date;
   useEffect(() => {
     active.current = true;
     return () => {
@@ -103,8 +99,9 @@ function AnalysisWorkspace({ runId }) {
       const data = await api.createAnalysisRun({
         store_id: "S001",
         run_type: mode,
-        // Read the clock again at submission, even after a sleeping tab or midnight rollover.
-        as_of_date: config.mode === 'mock' ? '2022-06-30' : localToday(),
+        // Post the date the page shows; re-reading the clock here would post today, which
+        // has no complete snapshot until the store closes.
+        as_of_date: config.mode === 'mock' ? '2022-06-30' : analysisDate,
         scenario,
       });
       if (!data?.analysis_run?.id) throw Error("Missing analysis_run.id");
@@ -121,7 +118,7 @@ function AnalysisWorkspace({ runId }) {
       <PageHeader
         eyebrow={t("Daily demand planning")}
         title={t(runId ? "Analysis run" : "Analysis")}
-        description={t(runId ? 'This run retains its original analysis date. Start a new analysis to use today’s date.' : "Run a Daily analysis for today. Past analyses are in Logs.")}
+        description={t(runId ? 'This run retains its original analysis date. Start a new analysis to use the newest stored date.' : "Run a Daily analysis for the newest stored store day. Past analyses are in Logs.")}
       />
       <div className="analysis-grid">
         <section className="panel request-panel">
@@ -139,7 +136,7 @@ function AnalysisWorkspace({ runId }) {
               >
                 <span className="analysis-mode-card__title">{t("Daily")}</span>
                 <span className="analysis-mode-card__summary">{t(runId ? 'Demand and replenishment for this run’s analysis date' : "Analyze today's demand and recommend replenishment")}</span>
-                <span className="analysis-mode-card__detail">{t(config.mode === "mock" ? "Demo data date" : "Analysis date")}: <strong>{analysisDate}</strong></span>
+                <span className="analysis-mode-card__detail">{t(config.mode === "mock" ? "Demo data date" : "Analysis date")}: <strong>{analysisDate || '—'}</strong></span>
               </button>
               <button
                 className={`analysis-mode-card${mode === "monthly" ? " is-selected" : ""}`}
@@ -154,7 +151,15 @@ function AnalysisWorkspace({ runId }) {
               </button>
             </div>
             {(config.mode === "mock" || !monthlyRecommendationsAvailable) && <p className="analysis-mode-note">{t("Monthly recommendations are not available yet. The current API monthly mode is a historical anomaly scan, so it will not be started here.")}</p>}
-            <p className="analysis-data-note">{t(config.mode === 'mock' ? 'Synthetic demo uses the fixed fixture date 2022-06-30. Live analysis follows your computer’s local date.' : runId ? 'This run retains its original analysis date. Start a new analysis to use today’s date.' : 'Daily analysis follows your computer’s local date and requires all products today with 29 consecutive dates including today. Missing data is rejected by the API.')}</p>
+            <p className="analysis-data-note">{t(config.mode === 'mock' ? 'Synthetic demo uses the fixed fixture date 2022-06-30. Live analysis uses the newest stored store day.' : runId ? 'This run retains its original analysis date. Start a new analysis to use the newest stored date.' : 'Daily analysis uses the newest stored store day and requires all 20 products plus 29 consecutive days of sales up to that date. Missing data is rejected by the API.')}</p>
+            {config.mode === 'live' && !runId && latestStoredDate && latestStoredDate !== systemDate && (
+              <p className="workflow-message" role="status">
+                {`${t('Today’s store close is not saved yet, so this analysis uses the newest stored date')}: ${latestStoredDate}`}
+              </p>
+            )}
+            {config.mode === 'live' && !runId && spanState.error && (
+              <Feedback error={spanState.error} reload={spanState.reload} />
+            )}
             <div className="request-fields">
               <label className="field-group">
                 {t("Store")}

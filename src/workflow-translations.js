@@ -1,4 +1,9 @@
 export const workflowTranslations = {
+  'Run a Daily analysis for the newest stored store day. Past analyses are in Logs.': '按最近已保存的门店日期运行 Daily 分析，历史分析可在日志中查看。',
+  'This run retains its original analysis date. Start a new analysis to use the newest stored date.': '本次分析保留原始分析日期；新建分析将使用最近已保存的日期。',
+  'Daily analysis uses the newest stored store day and requires all 20 products plus 29 consecutive days of sales up to that date. Missing data is rejected by the API.': 'Daily 分析使用最近已保存的门店日期，需要全部 20 种商品以及截至该日期连续 29 天的销量数据；数据不完整时接口会拒绝。',
+  'Synthetic demo uses the fixed fixture date 2022-06-30. Live analysis uses the newest stored store day.': '模拟演示固定使用 2022-06-30；真实接口模式使用最近已保存的门店日期。',
+  'Today’s store close is not saved yet, so this analysis uses the newest stored date': '今天尚未完成闭店结算，因此本次分析使用最近已保存的日期',
   'Track daily sales, replenishment and closing stock by product.': '按商品查看每日销量、补货入库量和期末库存。',
   'Daily inventory settlement': '每日库存结算',
   'At close, the system deducts forecast sales up to the opening stock, then adds the forecast replenishment. Quantities are simulated.': '闭店时系统按预测销量扣减库存，最多扣至零，再按预测补货量模拟入库。',
@@ -41,7 +46,7 @@ export const workflowTranslations = {
   'This run retains its original analysis date. Start a new analysis to use today’s date.': '本任务保留原始分析日期。新建分析将使用系统当天日期。',
   'Daily analysis follows your computer’s local date and requires all products today with 29 consecutive dates including today. Missing data is rejected by the API.': '每日分析自动跟随电脑本地日期，需要当天全部商品的数据，以及包含今天在内的连续 29 天数据。数据不足时，后端会拒绝请求。',
   'Synthetic demo uses the fixed fixture date 2022-06-30. Live analysis follows your computer’s local date.': '模拟演示使用固定样例日期 2022-06-30；真实分析自动跟随电脑本地日期。',
-  'Local integration uses the trained model and a separate SQLite database. Daily analysis follows your computer’s local date and requires 29 consecutive dates including today.': '本地联调使用已训练模型和独立 SQLite 数据库。每日分析跟随电脑本地日期，需要包含今天在内的连续 29 天数据。',
+  'Local integration uses the trained model and a separate SQLite database. Daily analysis uses the newest stored store day and requires 29 consecutive dates up to it.': '本地联调使用已训练模型和独立 SQLite 数据库。每日分析使用最近已保存的门店日期，需要截至该日期连续 29 天的数据。',
   'Forecast demand and recommendations for the next 30 days': '预测未来 30 天需求并生成补货建议',
   'Forecast window': '预测区间',
   'Next 30 days': '未来 30 天',
