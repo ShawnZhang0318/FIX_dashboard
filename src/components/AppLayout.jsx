@@ -136,11 +136,11 @@ export default function AppLayout() {
         </header>
 
         <main className="main-content">
-          {!pathname.startsWith('/logs') && <div className="workflow-message workflow-notice">{t(config.localIntegration ? 'Local integration uses the trained model and a separate SQLite database. Daily analysis follows your computer’s local date and requires 29 consecutive dates including today.' : config.mode==='mock'?'Synthetic fixtures only. No trained model or server database. Saved in this browser.':'Live API mode. Results come from the configured backend.')}</div>}
+          {!pathname.startsWith('/logs') && !pathname.startsWith('/inventory') && <div className="workflow-message workflow-notice">{t(config.localIntegration ? 'Local integration uses the trained model and a separate SQLite database. Daily analysis follows your computer’s local date and requires 29 consecutive dates including today.' : config.mode==='mock'?'Synthetic fixtures only. No trained model or server database. Saved in this browser.':'Live API mode. Results come from the configured backend.')}</div>}
           <Outlet />
           <footer className="page-footer">
             <span>{t('Project F.I.X. · Demo workspace')}</span>
-            <span>{t('Inventory decisions remain human-reviewed')}</span>
+            <span>{t('Exception reviews are recorded separately')}</span>
           </footer>
         </main>
       </div>

@@ -4,24 +4,40 @@ import PageHeader from "../components/PageHeader.jsx";
 import { Feedback, Metric } from "../components/WorkflowUI.jsx";
 import { useLanguage } from "../i18n.jsx";
 import { useResource } from "../useResource.js";
-import { api, config, number } from "../workflow.js";
+import { api, number } from "../workflow.js";
 import SnapshotTransferPanel from "../components/SnapshotTransferPanel.jsx";
-import DailyDataForm from "../components/DailyDataForm.jsx";
-import DailyUpdatePanel from "../components/DailyUpdatePanel.jsx";
+import {InventorySchedule, useInventorySchedule} from "../components/InventorySchedule.jsx";
 import { loadInventoryDay, localToday } from "../../frontend/daily-data.js";
+
+const isForecast = row => row.source_reference?.startsWith('forecast_auto/');
+const isSimulated = row => isForecast(row) || row.source_reference?.startsWith('historical_simulation/') ||
+  row.source_reference?.startsWith('synthetic-fixture/');
+
+function forecastSource(row) {
+  if (row.forecast_source === 'model') return 'Trained model';
+  if (row.forecast_source === 'historical_baseline') return 'Historical sales baseline';
+  return row.forecast_source || '—';
+}
+
+function total(rows, field) {
+  return number(rows.length && rows.every(row => Number.isFinite(row[field]))
+    ? rows.reduce((sum, row) => sum + row[field], 0) : null);
+}
 
 export default function InventoryPage() {
   const { t } = useLanguage(),
     [search, setSearch] = useState("");
-  const [selectedDate, setSelectedDate] = useState(''), [editing, setEditing] = useState(false);
-  const [saved, setSaved] = useState(null);
-  const state = useResource(useCallback(options => loadInventoryDay(api, selectedDate, options), [selectedDate]));
+  const [selectedDate, setSelectedDate] = useState('');
+  const schedule = useInventorySchedule();
+  const latestSettlement = schedule.data?.last_settled_date;
+  const state = useResource(useCallback(options => loadInventoryDay(api, selectedDate, options), [selectedDate, latestSettlement]));
   const rows = state.data?.snapshots || [], date = state.data?.date || '';
   const inventory = state.data?.inventory || [];
+  const simulatedCount = rows.filter(isSimulated).length;
+  const forecastRows = rows.filter(isForecast);
+  const hasForecast = forecastRows.length > 0;
+  const mixedSources = simulatedCount > 0 && simulatedCount < rows.length;
   const leadTimes = new Map(inventory.map(row => [row.product_id, row.lead_time_days]));
-  function onSaved(day, count) {
-    setEditing(false); setSaved({date: day, count}); setSelectedDate(day); state.reload();
-  }
   const filtered = rows.filter((x) =>
       (x.product_id + " " + (x.category_raw || ""))
         .toLowerCase()
@@ -33,7 +49,7 @@ export default function InventoryPage() {
         eyebrow={t("Store operations")}
         title={t("Inventory")}
         description={t(
-          "Review stock and daily sales by data date, or record a new day's observations.",
+          "Track daily sales, replenishment and closing stock by product.",
         )}
         actions={
           <Link className="primary-button" to="/analysis">
@@ -41,43 +57,42 @@ export default function InventoryPage() {
           </Link>
         }
       />
-      {saved && <p className="workflow-message" role="status">{t('Daily records saved')}: {saved.date} · {saved.count} {t('products')}.</p>}
+      <InventorySchedule state={schedule} />
+      <h2 className="inventory-history-title">{t('Inventory history')}</h2>
       <div className="panel daily-date-toolbar">
         <label className="field-group">{t('Data date')}
-          <input className="field-value" type="date" max={localToday()} value={selectedDate || date}
-            disabled={editing} onChange={e => setSelectedDate(e.target.value)} />
+          <input className="field-value" type="date" max={schedule.data?.business_date || localToday()} value={selectedDate || date}
+            onChange={e => setSelectedDate(e.target.value)} />
         </label>
-        <button className="secondary-button" disabled={editing || state.loading} onClick={() => {setSelectedDate(''); state.reload();}}>{t('Latest data')}</button>
-        <button className="secondary-button" disabled={editing || state.loading} onClick={state.reload}>{t('Refresh')}</button>
-        <button className="primary-button" disabled={editing || state.loading || !rows.length || config.mode !== 'live'}
-          onClick={() => {setSaved(null); setEditing(true);}}>{t('Record daily sales and stock')}</button>
+        <button className="secondary-button" disabled={state.loading} onClick={() => {setSelectedDate(''); state.reload();}}>{t('Latest data')}</button>
+        <button className="secondary-button" disabled={state.loading} onClick={state.reload}>{t('Refresh')}</button>
       </div>
       <Feedback {...state} />
       {state.data && (
         <>
+          {simulatedCount > 0 && <p className="workflow-message" role="status">
+            {t(mixedSources ? 'Totals include both simulated and observed records.' : hasForecast ? 'Forecast-based inventory settlement' : 'Simulated sales and inventory for this date.')}
+          </p>}
           <div className="summary-grid daily-summary">
-            <Metric label={t("Tracked products")} value={rows.length} />
-            <Metric
-              label={t("Total observed stock")}
-              value={number(
-                rows.length && rows.every((x) => Number.isFinite(x.inventory_level))
-                  ? rows.reduce((s, x) => s + x.inventory_level, 0)
-                  : null,
-              )}
-            />
-            <Metric label={t('Total daily units sold')} value={rows.length ? number(rows.reduce((sum, row) => sum + row.units_sold, 0)) : '—'} />
-            <Metric label={t('Data date')} value={date || '—'} />
+            {hasForecast ? <>
+              <Metric label={t('Opening stock')} value={total(rows, 'opening_quantity')} />
+              <Metric label={t('Total daily units sold')} value={total(rows, 'units_sold')} />
+              <Metric label={t('Forecast replenishment received')} value={total(forecastRows, 'units_ordered')} />
+              <Metric label={t('Closing stock')} value={total(rows, 'inventory_level')} />
+            </> : <>
+              <Metric label={t("Tracked products")} value={rows.length} />
+              <Metric label={t(simulatedCount ? 'Total stock' : 'Total observed stock')} value={total(rows, 'inventory_level')} />
+              <Metric label={t('Total daily units sold')} value={total(rows, 'units_sold')} />
+              <Metric label={t('Data date')} value={date || '—'} />
+            </>}
           </div>
-          {rows.length < inventory.length && <p className="workflow-message" role="status">{t('This date has incomplete product coverage. Add the missing observations before running Daily analysis.')} ({rows.length}/{inventory.length})</p>}
-          {editing && <DailyDataForm key={date} snapshots={rows} date={date} onSaved={onSaved} onClose={() => setEditing(false)} />}
+          {rows.length < inventory.length && <p className="workflow-message" role="status">{t(rows.length ? 'Only part of the inventory is recorded for this date.' : 'No inventory has been recorded for this date.')} ({rows.length}/{inventory.length})</p>}
           <section className="panel inventory-panel">
             <div className="panel-heading">
               <div>
                 <h2>{t("Inventory records")}</h2>
                 <p>
-                  {t(
-                    "Stock and units sold below are saved observations for the selected data date.",
-                  )}
+                  {t(simulatedCount ? 'Sales and closing stock by product.' : 'Stock and units sold below are saved observations for the selected data date.')}
                 </p>
               </div>
             </div>
@@ -98,11 +113,14 @@ export default function InventoryPage() {
                   <tr>
                     {[
                       "Product ID",
-                      "Observed stock",
+                      ...(hasForecast ? ['Opening stock', 'Forecast unit sales'] : []),
                       "Daily units sold",
-                      "Snapshot date",
+                      ...(hasForecast ? ['Forecast replenishment received'] : []),
+                      simulatedCount ? "Closing stock" : "Observed stock",
+                      ...(hasForecast ? ['Forecast source'] : ["Snapshot date"]),
                       "Category",
                       "Lead time",
+                      ...(mixedSources ? ['Record source'] : []),
                     ].map((x) => (
                       <th key={x}>{t(x)}</th>
                     ))}
@@ -112,18 +130,21 @@ export default function InventoryPage() {
                   {filtered.map((x) => (
                     <tr key={x.store_id + ":" + x.product_id}>
                       <td>{x.product_id}</td>
-                      <td className="observed-value">{number(x.inventory_level)}</td>
+                      {hasForecast && <><td>{number(x.opening_quantity)}</td><td>{number(x.predicted_units_sold)}</td></>}
                       <td className="observed-value">{number(x.units_sold)}</td>
-                      <td>{x.snapshot_date}</td>
+                      {hasForecast && <td>{isForecast(x) ? number(x.units_ordered) : '—'}</td>}
+                      <td className="observed-value">{number(x.inventory_level)}</td>
+                      <td>{hasForecast ? t(forecastSource(x)) : x.snapshot_date}</td>
                       <td>{x.category_raw || "—"}</td>
                       <td>
                         {number(leadTimes.get(x.product_id))} {t("days")}
                       </td>
+                      {mixedSources && <td>{t(isSimulated(x) ? 'Simulated' : 'Observed')}</td>}
                     </tr>
                   ))}
                   {!filtered.length && (
                     <tr>
-                      <td colSpan="6">{t("No matching records.")}</td>
+                      <td colSpan={6 + (hasForecast ? 3 : 0) + (mixedSources ? 1 : 0)}>{t("No matching records.")}</td>
                     </tr>
                   )}
                 </tbody>
@@ -132,8 +153,7 @@ export default function InventoryPage() {
           </section>
         </>
       )}
-      {!editing && <DailyUpdatePanel onImported={state.reload} />}
-      {!editing && <SnapshotTransferPanel onImported={state.reload} />}
+      <SnapshotTransferPanel />
     </>
   );
 }

@@ -15,5 +15,6 @@ COPY ai/ ./ai/
 COPY data/ ./data/
 COPY integration/ ./integration/
 COPY local_backend/ ./local_backend/
+COPY scripts/generate_daily_sales.py ./scripts/
 
 CMD ["python", "-m", "local_backend.worker"]

@@ -6,7 +6,7 @@ Project F.I.X. helps inventory planners turn daily retail observations into dema
 
 The current scope is one store, **S001**, and its 20 products. The system uses the supplied retail inventory dataset, with recorded sales as the demand proxy and simulated supplier lead times. The dataset's `Demand Forecast` column is retained as an offline reference and is excluded from model inputs.
 
-Recommendations are advisory: approving a case records a planner's decision; it does not place a purchase order or change inventory. Current inventory is updated from newly accepted daily observations.
+At 22:00 Beijing time, the inventory worker posts simulated sales and replenishment for each product. Sales are capped at opening stock. Replenishment brings the remaining balance up to the forecast stock target. The dashboard shows the source of each forecast and the saved closing balance. Exception reviews remain advisory. See the [daily inventory guide](docs/daily-data-entry-zh.md).
 
 ## Currently works: local integration
 
@@ -19,7 +19,7 @@ Recommendations are advisory: approving a case records a planner's decision; it 
 - Review replenishment and unusual-demand cases, including combined cases.
 - Query backend application logs by task, request, service, and time, and export matching records.
 
-The [recorded local acceptance](docs/local-integration-zh.md#本次验证证据) includes a real-model run on **2026-10-20** with **20/20 saved product results**, a persisted approval, unchanged inventory after review, and **175 correlated API/worker/AI log events** checked through pagination and export. These are historical local results, not a new test of today's checkout or a Railway/PostgreSQL acceptance result. Reproduce the flow against the Week 07 checkpoint and record that evidence in its milestone document.
+The [recorded local acceptance](docs/local-integration-zh.md#本次验证证据) includes a real-model run on **2026-10-20** with **20/20 saved product results**, a persisted approval, unchanged inventory after review, and **175 correlated API/worker/AI log events** checked through pagination and export. These results cover the historical local analysis and review workflow. Reproduce that flow against the Week 07 checkpoint and record its evidence in the milestone document.
 
 The dashboard communicates with the public API. The worker calls the private AI service and saves results for subsequent retrieval. Detailed component boundaries and data flow belong in the architecture document linked below.
 

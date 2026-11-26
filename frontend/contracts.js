@@ -114,7 +114,17 @@ function snapshot(x, p, filters = {}) {
 // predictions remain unavailable; never silently coerce them to zero.
 export function validateResponse(operation, data, args = []) {
   const [first] = args;
-  if (operation === 'getSnapshots') {
+  if (operation === 'getInventoryAutomation') {
+    object(data, 'automation');
+    check(data.store_id === (first?.store_id || STORE_ID), 'automation.store_id');
+    date(data.business_date, 'automation.business_date');
+    member(data.status, ['scheduled', 'settled', 'blocked', 'disabled'], 'automation.status');
+    text(data.timezone, 'automation.timezone');
+    check(data.close_time === null || /^([01]\d|2[0-3]):[0-5]\d$/.test(data.close_time), 'automation.close_time');
+    if (data.last_settled_date != null) date(data.last_settled_date, 'automation.last_settled_date');
+    check(data.next_settlement_at == null || Number.isFinite(Date.parse(data.next_settlement_at)), 'automation.next_settlement_at');
+    optionalText(data.detail, 'automation.detail');
+  } else if (operation === 'getSnapshots') {
     array(data, 'snapshots', (x, p) => snapshot(x, p, first));
     unique(data, x => `${x.store_id}/${x.product_id}/${x.snapshot_date}`, 'snapshots (duplicate)');
   } else if (operation === 'getLatestSnapshot') {

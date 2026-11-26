@@ -3,6 +3,7 @@ import { validateResponse } from './contracts.js';
 import { newRequestId } from './activity-log.js';
 
 const endpoints = {
+  getInventoryAutomation: ['GET', '/inventory/automation'],
   ingestSnapshots: ['POST', '/snapshots'],
   getSnapshots: ['GET', '/snapshots'],
   getLatestSnapshot: ['GET', '/snapshots/latest'],
@@ -56,6 +57,7 @@ export function createApiGateway(adapter, {log, mode, now = () => Date.now(), uu
     }
   }
   const api = {
+    getInventoryAutomation: (filters = {}, options) => call('getInventoryAutomation', [filters], options),
     ingestSnapshots: (body, options) => call('ingestSnapshots', [body], options),
     getSnapshots: (filters = {}, options) => call('getSnapshots', [filters], options),
     getLatestSnapshot: (filters = {}, options) => call('getLatestSnapshot', [filters], options),

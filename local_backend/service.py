@@ -12,7 +12,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
 from ai.diagnostics import POLICY_VERSION
-from local_backend import storage as s
+from local_backend import checkout, inventory_schedule, storage as s
 from local_backend.schemas import SnapshotBatch, RunRequest, Review
 
 
@@ -104,6 +104,13 @@ def inventory(store_id: Literal["S001"] = "S001"):
         return [s.row_data(r) for r in db.execute("SELECT data FROM inventory WHERE store_id=? ORDER BY product_id", (store_id,))]
 
 
+@app.get("/inventory/automation")
+def inventory_automation(store_id: Literal["S001"] = "S001"):
+    with s.connect() as db:
+        checkout.lock_store(db, read=True)
+        return inventory_schedule.status(db)
+
+
 @app.get("/inventory/{store_id}/{product_id}")
 def inventory_item(store_id: Literal["S001"], product_id: str):
     with s.connect() as db:
@@ -138,13 +145,23 @@ def latest_snapshot(store_id: Literal["S001"] = "S001"):
 def ingest(payload: SnapshotBatch, request: Request):
     try:
         with s.connect() as db:
-            s.begin_write(db)
+            checkout.lock_store(db)
+            if checkout.open_day(db):
+                latest = {r[0]: r[1] for r in db.execute("SELECT product_id,snapshot_date FROM inventory")}
+                if any(x.snapshot_date.isoformat() > latest[x.product_id] for x in payload.snapshots):
+                    raise HTTPException(409, "Close the open sales day before advancing inventory")
             result = s.ingest(db, [x.model_dump(mode="json") for x in payload.snapshots], payload.source_file_sha256.lower())
             s.event(db, "api", "ingestion", "snapshots.committed", f"Committed {result['inserted_count']} snapshots",
                     request_id=request.state.request_id, context={"source_sha256": payload.source_file_sha256})
             return result
     except s.integrity_errors() as exc:
         raise HTTPException(409, "Duplicate snapshot identity; entire batch rolled back") from exc
+
+
+@app.get("/sales/day")
+def sales_day(business_date: date, store_id: Literal["S001"] = "S001"):
+    with s.connect() as db:
+        return require(checkout.closed_summary(db, business_date.isoformat()))
 
 
 @app.post("/analysis-runs", status_code=202)

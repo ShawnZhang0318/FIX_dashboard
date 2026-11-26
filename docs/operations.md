@@ -22,6 +22,7 @@ Complete the [README prerequisites and installation](../README.md#quick-start-lo
 | --- | --- |
 | `FIX_DATABASE_URL` | Leave unset for SQLite. For PostgreSQL, give API and worker the same PostgreSQL URL. Connection failure does not fall back to SQLite. |
 | `FIX_AI_URL` | Worker-to-AI URL; default `http://127.0.0.1:8001`. |
+| `FIX_STORE_TIMEZONE` / `FIX_STORE_CLOSE_TIME` | Store time zone and daily inventory settlement time. Defaults are `Asia/Shanghai` and `22:00`. Use matching settings for the API and worker. |
 | `VITE_BASE_PATH` | `/FIX_dashboard/` for the local URL below. |
 | `FIX_ALLOWED_ORIGINS` | Optional comma-separated exact frontend origins. Defaults allow localhost/127.0.0.1 on ports 5173 and 5174. |
 
@@ -50,6 +51,8 @@ Wait for both readiness checks to return HTTP 200 before importing or submitting
 ```
 
 The importer verifies the source CSV checksum and sends **14,620 S001 observations** through the public API in batches of up to 100. Both counts should be **20**. Re-running verifies and skips identical records; conflicts are rejected. Each batch is atomic, while earlier committed batches survive a later failure.
+
+The worker settles simulated sales and replenishment at the configured closing time. Read `GET /inventory/automation?store_id=S001` for the next due date and settlement status. After settlement, compare the saved daily receipt at `GET /sales/day?business_date=YYYY-MM-DD` with the 20 snapshots for that date. Each closing balance equals opening stock minus units sold plus replenishment received. While the worker is offline the due date stays pending. After restart it processes missed days in order. For a blocked day inspect the worker event `inventory.settlement_blocked` and the worker console. The [daily inventory guide](daily-data-entry-zh.md) describes forecast sources and how imported history is preserved.
 
 ### 4. Submit an analysis
 

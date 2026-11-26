@@ -47,6 +47,11 @@ export function createMockApi({storage,now=()=>Date.now(),uuid=()=>crypto.random
   parent_run_status:status(r),partial:status(r)==='failed',
   exception_type:x.recommended_order_quantity>0?(x.anomaly_type==='unusual_demand'?'reorder_and_anomaly':'reorder'):'anomaly',status:'pending_review',result:x,...d.reviews[x.case_id]})));
  return {
+  async getInventoryAutomation(filters={}) {
+    const {store_id} = prepareFilters('inventory', filters);
+    return {store_id, business_date:'2022-06-30', status:'disabled', timezone:'Asia/Shanghai',
+      close_time:null, next_settlement_at:null, last_settled_date:null, detail:null};
+  },
   async ingestSnapshots(body){prepareSnapshotBatch(body);throw new ApiError('Snapshot ingestion requires the real public API. Mock fixtures are read-only.',503,'BACKEND_NOT_CONNECTED');},
   async getSnapshots(filters={}){
    const f=prepareFilters('snapshots',filters);

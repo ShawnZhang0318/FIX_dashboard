@@ -2,10 +2,12 @@
 import json
 import math
 import os
+import logging
+from threading import Event, Thread
 from time import perf_counter, sleep
 
 from integration.worker_ai import WorkerAIClient
-from local_backend import storage as s
+from local_backend import checkout, inventory_schedule, storage as s
 
 
 def claim():
@@ -172,10 +174,25 @@ def finish(run_id, job_id, error=None, *, diagnostics=None):
                 level="ERROR" if error else "INFO", error=error, run_id=run_id, job_id=job_id, request_id=request_id)
 
 
+def scheduled_closing(stop):
+    while not stop.is_set():
+        try:
+            if inventory_schedule.run_due(client=None):
+                continue  # Another day may have become due while the worker was offline.
+        except Exception:
+            logging.exception("Forecast inventory settlement failed. Retrying in 30 seconds.")
+        stop.wait(30)
+
+
 def main():
     s.initialize()
     s.log("worker", "startup", "worker.started", "Polling worker started; no automatic replay of claimed jobs")
     client = WorkerAIClient(os.environ.get("FIX_AI_URL", "http://127.0.0.1:8001"))
+    stop = Event()
+    scheduler = None
+    if checkout.closing_time() is not None:
+        scheduler = Thread(target=scheduled_closing, args=(stop,), daemon=True)
+        scheduler.start()
     try:
         while True:
             job = claim()
@@ -183,6 +200,9 @@ def main():
                 process(job, client)
             sleep(0.5)
     finally:
+        stop.set()
+        if scheduler:
+            scheduler.join()
         client.close()
 
 

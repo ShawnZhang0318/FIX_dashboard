@@ -15,5 +15,6 @@ COPY ai/ ./ai/
 COPY data/ ./data/
 COPY integration/ ./integration/
 COPY local_backend/ ./local_backend/
+COPY scripts/generate_daily_sales.py ./scripts/
 
 CMD ["sh", "-c", "exec uvicorn local_backend.service:app --host 0.0.0.0 --port ${PORT:-8000}"]

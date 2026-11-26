@@ -166,7 +166,7 @@ def initialize():
     with connect() as db:
         db.execute("PRAGMA journal_mode=WAL")
         version = db.execute("PRAGMA user_version").fetchone()[0]
-        if version not in (0, 1):
+        if version not in (0, 1, 2):
             raise RuntimeError("Unsupported local schema revision")
         db.executescript("""
         CREATE TABLE IF NOT EXISTS products(id TEXT PRIMARY KEY);
@@ -200,7 +200,17 @@ def initialize():
         CREATE TABLE IF NOT EXISTS log_queries(
           id TEXT PRIMARY KEY, created_at TEXT NOT NULL, filters TEXT NOT NULL, payload TEXT NOT NULL);
         CREATE TABLE IF NOT EXISTS metadata(key TEXT PRIMARY KEY,value TEXT NOT NULL);
-        PRAGMA user_version=1;
+        CREATE TABLE IF NOT EXISTS sales_days(
+          store_id TEXT NOT NULL CHECK(store_id='S001'), business_date TEXT NOT NULL,
+          closed_at TEXT, summary TEXT, PRIMARY KEY(store_id,business_date),
+          CHECK((closed_at IS NULL) = (summary IS NULL)));
+        CREATE UNIQUE INDEX IF NOT EXISTS sales_one_open ON sales_days(store_id) WHERE closed_at IS NULL;
+        CREATE TABLE IF NOT EXISTS sales_scans(
+          scan_id TEXT PRIMARY KEY, store_id TEXT NOT NULL, business_date TEXT NOT NULL,
+          product_id TEXT NOT NULL REFERENCES products(id), created_at TEXT NOT NULL, receipt TEXT NOT NULL,
+          FOREIGN KEY(store_id,business_date) REFERENCES sales_days(store_id,business_date));
+        CREATE INDEX IF NOT EXISTS sales_scan_day ON sales_scans(store_id,business_date,product_id);
+        PRAGMA user_version=2;
         """)
 
 

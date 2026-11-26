@@ -9,6 +9,8 @@ if (!(Test-Path -LiteralPath $python)) {
 if (!(Test-Path -LiteralPath $python)) { throw 'First create .venv-model and install ai/requirements-dev.txt; see docs/local-integration-zh.md.' }
 New-Item -ItemType Directory -Path $stateDir -Force | Out-Null
 $env:FIX_LOCAL_STATE = $stateDir
+if (!$env:FIX_STORE_TIMEZONE) { $env:FIX_STORE_TIMEZONE = 'Asia/Shanghai' }
+if (!$env:FIX_STORE_CLOSE_TIME) { $env:FIX_STORE_CLOSE_TIME = '22:00' }
 $services = @(
     @{Name='ai'; Port=8001; Exe=$python; Args=@('-m','uvicorn','local_backend.ai_service:app','--host','127.0.0.1','--port','8001')},
     @{Name='api'; Port=8000; Exe=$python; Args=@('-m','uvicorn','local_backend.service:app','--host','127.0.0.1','--port','8000')},

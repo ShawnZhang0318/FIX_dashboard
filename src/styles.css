@@ -2242,6 +2242,15 @@ input.field-value:disabled, textarea.field-value:disabled { color: #4f636d; back
 
 .page-footer { color: #5c7079; font-size: 12px; }
 
+.inventory-history-title { margin: 30px 0 14px; }
+.inventory-schedule { padding: clamp(18px, 3vw, 30px); }
+.inventory-schedule .panel-heading { align-items: center; gap: 12px; flex-wrap: wrap; }
+.inventory-schedule .panel-heading h2 { margin: 0; }
+.inventory-schedule-status { color: var(--teal-dark); }
+.inventory-schedule-dates { display: flex; flex-wrap: wrap; gap: 16px 48px; margin: 20px 0 0; }
+.inventory-schedule-dates dt { font-size: .9rem; color: #506975; }
+.inventory-schedule-dates dd { margin: 4px 0 0; font-weight: 700; font-variant-numeric: tabular-nums; }
+
 @media (max-width: 900px) {
   .main-content { padding-left: 28px; padding-right: 28px; }
 }

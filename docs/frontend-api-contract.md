@@ -20,6 +20,8 @@ Resource IDs may be nonempty strings or nonnegative safe integers; the adapter n
 | `GET /snapshots?store_id=S001&product_id=...&from=...&to=...` | Complete matching snapshot array. Product/date filters optional; ISO date bounds inclusive. |
 | `GET /inventory?store_id=S001` | Array of `{product_id, store_id, on_hand_quantity, snapshot_date, source_snapshot_id, lead_time_days}`; `name`, `category` optional. |
 | `GET /inventory/{store_id}/{product_id}` | One current inventory record with the same fields. |
+| `GET /inventory/automation?store_id=S001` | Backend store clock, `status` (scheduled, settled, blocked or disabled), `close_time`, `timezone`, `next_settlement_at`, `last_settled_date` and optional `detail`. |
+| `GET /sales/day?business_date=YYYY-MM-DD` | Saved daily settlement receipt. Forecast receipts include `mode=forecast_auto`, `total_units_sold`, `total_units_replenished` and per-product movements. An unsettled date returns 404. |
 | `POST /analysis-runs` | Body `{store_id, run_type: "daily", as_of_date}`. Return 202 `{analysis_run: {id, status: "queued"}, job: {id, status: "pending"}}`. Mock-only `scenario` is stripped by the live adapter. |
 | `GET /analysis-runs/{id}` | `{id, store_id, as_of_date, status, job:{id,status}, processed_count, expected_count, partial, error, created_at, completed_at}`. Run states queued/processing/completed/failed map to Job pending/claimed/completed/failed. Error is an optional safe summary. |
 | `GET /analysis-runs/{id}/results` | `{results: [ForecastResult], status, partial}`. Normal results must remain included. |

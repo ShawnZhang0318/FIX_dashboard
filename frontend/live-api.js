@@ -10,6 +10,10 @@ export function createLiveApi(options) {
     ...context, ...extra, validate: data => validateResponse(operation, normalizeResponseIds(data), args),
   });
   return {
+    getInventoryAutomation(filters = {}, context) {
+      const selected = prepareFilters('inventory', filters);
+      return read('getInventoryAutomation', [selected], '/inventory/automation?' + query(selected), context);
+    },
     async ingestSnapshots(body, context) {
       const payload = prepareSnapshotBatch(body);
       return read('ingestSnapshots', [payload], '/snapshots', context, {method: 'POST', body: payload, expectedStatus: [200,201]});

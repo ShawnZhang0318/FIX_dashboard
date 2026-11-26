@@ -4,6 +4,21 @@ import {createLiveApi} from '../live-api.js';
 import {createHttpClient} from '../http-client.js';
 import {createMockApi} from '../mock-api.js';
 
+test('automatic inventory schedule is a store-scoped read and preserves blocked state', async () => {
+ const status = {store_id:'S001', business_date:'2026-11-26', status:'blocked', close_time:'22:00',
+  timezone:'Asia/Shanghai', next_settlement_at:'2026-11-26T22:00:00+08:00', last_settled_date:null,
+  detail:'Inventory worker is offline. Start the worker to resume settlement.'};
+ const api = createLiveApi({apiBaseUrl:'http://example.test/api', fetchImpl:async (url, options) => {
+  assert.equal(options.method, 'GET');
+  assert.equal(new URL(url).pathname, '/api/inventory/automation');
+  assert.equal(new URL(url).searchParams.get('store_id'), 'S001');
+  return new Response(JSON.stringify(status));
+ }});
+ assert.deepEqual(await api.getInventoryAutomation(), status);
+ status.store_id = 'S002';
+ await assert.rejects(api.getInventoryAutomation(), /automation.store_id/);
+});
+
 test('live adapter preserves prefix, encodes identities and strips mock-only inputs',async()=>{
  let saved;const mock=createMockApi({storage:{getItem:()=>saved,setItem:(k,v)=>saved=v},now:()=>0,uuid:()=> 'run'});
  await mock.createAnalysisRun({store_id:'S001',run_type:'daily',as_of_date:'2022-06-30'});

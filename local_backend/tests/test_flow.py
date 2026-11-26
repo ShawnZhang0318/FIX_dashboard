@@ -1,12 +1,13 @@
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta
 import json
 import os
 from concurrent.futures import ThreadPoolExecutor
+from uuid import uuid4
 import pytest
 from fastapi.testclient import TestClient
 from ai.diagnostics import diagnose
 from ai.schemas import DiagnosticsRequest
-from local_backend import storage as s, worker
+from local_backend import checkout, storage as s, worker
 from local_backend.service import app
 
 CUTOFF = date(2023, 11, 15)
@@ -28,7 +29,7 @@ def api(tmp_path, monkeypatch):
         monkeypatch.setattr(s, "DATABASE_URL", postgres_url)
         s.initialize()
         with s.connect() as db:
-            db.execute("""TRUNCATE TABLE metadata,log_queries,logs,cases,results,jobs,runs,
+            db.execute("""TRUNCATE TABLE sales_days,sales_scans,metadata,log_queries,logs,cases,results,jobs,runs,
                           inventory,snapshots,transactions,products RESTART IDENTITY CASCADE""")
     else:
         monkeypatch.setattr(s, "DB_PATH", tmp_path/"test.sqlite3")
@@ -126,6 +127,87 @@ def test_atomic_ingestion_duplicate_rollback_and_historical_current_view(api):
     invalid = snapshot()
     invalid["units_sold"] = -1
     assert post([invalid]).status_code == 422
+
+
+def test_automatic_inventory_schedule_and_recovery(api, monkeypatch):
+    from local_backend import inventory_schedule
+    now = datetime.fromisoformat("2023-11-16T21:59:59+08:00")
+    monkeypatch.setattr(checkout, "store_now", lambda: now)
+    monkeypatch.setenv("FIX_STORE_CLOSE_TIME", "22:00")
+    seed()
+    worker.claim()  # Publish worker heartbeat without creating an analysis.
+    model = StubAI()
+    assert not inventory_schedule.run_due(model)
+    schedule = api.get("/inventory/automation").json()
+    assert schedule["next_settlement_at"] == "2023-11-16T22:00:00+08:00"
+    assert schedule["status"] == "scheduled"
+    for path in ("/sales/scans", "/sales/close"):
+        assert api.post(path, json={}).status_code == 404
+    now += timedelta(seconds=1)
+    assert inventory_schedule.run_due(model)
+    assert not inventory_schedule.run_due(model)
+    assert api.get("/inventory/automation").json()["status"] == "settled"
+    assert len(model.calls) == 20
+    day = api.get("/sales/day", params={"business_date": "2023-11-16"}).json()
+    assert day["mode"] == "forecast_auto"
+    assert day["total_units_sold"] > 0 and day["total_units_replenished"] > 0
+    for item in day["items"]:
+        assert item["on_hand_quantity"] == item["opening_quantity"] - item["units_sold"] + item["units_replenished"]
+    # A restart before closing on the 19th must catch up the 17th and 18th exactly once.
+    now = now.replace(day=19, hour=8)
+    assert inventory_schedule.run_due(model)
+    assert inventory_schedule.run_due(model)
+    assert not inventory_schedule.run_due(model)
+    state = api.get("/inventory/automation").json()
+    assert state["last_settled_date"] == "2023-11-18" and state["status"] == "scheduled"
+    assert len(model.calls) == 60
+
+
+def test_failed_settlement_retries_same_day_and_preserves_import(api, monkeypatch):
+    from local_backend import inventory_schedule
+    now = datetime.fromisoformat("2023-11-16T22:05:00+08:00")
+    monkeypatch.setattr(checkout, "store_now", lambda: now)
+    monkeypatch.setenv("FIX_STORE_CLOSE_TIME", "22:00")
+    seed()
+    worker.claim()
+    with pytest.raises(RuntimeError, match="Injected"):
+        inventory_schedule.run_due(StubAI(fail_at=3))
+    state = api.get("/inventory/automation").json()
+    assert state["status"] == "blocked" and state["next_settlement_at"].startswith("2023-11-16")
+    assert api.get("/snapshots/latest").json()["snapshot_date"] == "2023-11-15"
+    assert inventory_schedule.run_due(StubAI())
+    # Existing imported observations for a full day stay authoritative.
+    now += timedelta(days=1)
+    rows = [snapshot(product, now.date(), stock=70, sales=4) for product in s.MANIFEST["product_id_categories"]]
+    with s.connect() as db:
+        s.ingest(db, rows, "f"*64)
+    assert inventory_schedule.run_due(StubAI(fail_at=1))
+    assert not inventory_schedule.run_due(StubAI(fail_at=1))
+    assert all(row["on_hand_quantity"] == 70 for row in api.get("/inventory").json())
+    assert api.get("/inventory/automation").json()["next_settlement_at"].startswith("2023-11-18")
+
+
+def test_existing_open_scan_day_is_settled_once_on_upgrade(api, monkeypatch):
+    from local_backend import inventory_schedule
+    now = datetime.fromisoformat("2023-11-20T09:00:00+08:00")
+    monkeypatch.setattr(checkout, "store_now", lambda: now)
+    monkeypatch.setenv("FIX_STORE_CLOSE_TIME", "22:00")
+    seed()
+    scan_day = "2023-11-16"
+    with s.connect() as db:
+        checkout.lock_store(db)
+        db.execute("INSERT INTO sales_days(store_id,business_date) VALUES('S001',?)", (scan_day,))
+        db.execute("""INSERT INTO sales_scans(scan_id,store_id,business_date,product_id,created_at,receipt)
+                      VALUES(?,'S001',?,'P0001',?,?)""", (str(uuid4()), scan_day, s.utcnow(), "{}"))
+        row = s.row_data(db.execute("SELECT data FROM inventory WHERE product_id='P0001'").fetchone())
+        row["on_hand_quantity"] = 499
+        db.execute("UPDATE inventory SET data=? WHERE product_id='P0001'", (s.encode(row),))
+    assert inventory_schedule.run_due(StubAI(fail_at=1))
+    assert not inventory_schedule.run_due(StubAI(fail_at=1))
+    receipt = api.get("/sales/day", params={"business_date": scan_day}).json()
+    assert receipt["total_units_sold"] == 1
+    assert receipt["items"][0]["on_hand_quantity"] == 499
+    assert api.get("/snapshots/latest").json()["snapshot_date"] == scan_day
 
 
 def test_new_daily_observations_update_date_sales_and_stock_without_changing_frozen_run(api):
