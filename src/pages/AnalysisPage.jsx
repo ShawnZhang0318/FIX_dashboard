@@ -39,6 +39,16 @@ function AnalysisWorkspace({ runId }) {
   const analysisDate = runId ? (run?.as_of_date || '') : config.mode === 'mock' ? '2022-06-30' : systemDate;
   const active = useRef(true),
     submitting = useRef(false);
+  const dateState = useResource(useCallback(options => runId ? Promise.resolve([]) : api.getInventory({store_id: 'S001'}, options), [runId]));
+  const spanState = useResource(useCallback(options => runId ? Promise.resolve(null) : api.getLatestSnapshot({store_id: 'S001'}, options), [runId]));
+  const queryDate = searchParams.get('as_of_date');
+  // The cutoff must be a date with a complete snapshot. Bound the field to the
+  // stored span so a future or pre-history date cannot produce a 422.
+  const span = spanState.data;
+  const analysisDate = run?.as_of_date
+    || (queryDate !== null ? queryDate : (span?.snapshot_date || latestDataDate(dateState.data || [])));
+  const minDate = span?.first_date;
+  const maxDate = span?.snapshot_date;
   useEffect(() => {
     active.current = true;
     return () => {

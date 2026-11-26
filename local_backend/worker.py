@@ -195,9 +195,20 @@ def main():
         scheduler.start()
     try:
         while True:
-            job = claim()
-            if job:
-                process(job, client)
+            try:
+                job = claim()
+                if job:
+                    process(job, client)
+            except Exception as exc:
+                # A dropped Supabase connection must not kill the poller; the
+                # uncommitted claim rolls back and the next poll retries.
+                try:
+                    s.log("worker", "poll", "worker.poll_failed", "Poll failed; will retry",
+                          level="ERROR", error=exc)
+                except Exception:
+                    print(f"worker poll failed: {exc}", flush=True)
+                sleep(5)
+                continue
             sleep(0.5)
     finally:
         stop.set()

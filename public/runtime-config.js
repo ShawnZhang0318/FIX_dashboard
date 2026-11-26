@@ -18,7 +18,7 @@ const localApiBaseUrl = localApiUrl && /^https?:\/\/.+/.test(localApiUrl)
   : 'http://127.0.0.1:8000';
 globalThis.FIX_CONFIG=localIntegration
   ? {mode:'live',apiBaseUrl:localApiBaseUrl,sendRequestId:true,backendLogsBaseUrl:null,
-     localIntegration:true,defaultAnalysisDate:'2023-11-15',minimumAnalysisDate:'2023-09-01'}
+     localIntegration:true,minimumAnalysisDate:'2023-09-01'}
   : hostedApiBaseUrl
     ? {mode:'live',apiBaseUrl:hostedApiBaseUrl.replace(/\/+$/, ''),sendRequestId:true,backendLogsBaseUrl:null}
     : {mode:'mock',apiBaseUrl:'http://localhost:8000',sendRequestId:false,backendLogsBaseUrl:null};

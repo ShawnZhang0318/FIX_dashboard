@@ -122,7 +122,10 @@ def connect():
             yield _PostgresConnection(connection)
             connection.commit()
         except BaseException:
-            connection.rollback()
+            try:
+                connection.rollback()
+            except Exception:
+                pass  # Dead socket: keep the original error, the pool discards it.
             raise
         finally:
             _connection_pool().putconn(connection)

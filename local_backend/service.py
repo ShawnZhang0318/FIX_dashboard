@@ -133,12 +133,16 @@ def snapshots(store_id: Literal["S001"] = "S001", product_id: str | None = None,
 
 @app.get("/snapshots/latest")
 def latest_snapshot(store_id: Literal["S001"] = "S001"):
-    """Newest snapshotted date for the store; drives dashboard date defaults."""
+    """First and newest snapshotted dates; the UI bounds cutoff pickers with them."""
     with s.connect() as db:
-        row = db.execute("SELECT MAX(snapshot_date) FROM snapshots WHERE store_id=?", (store_id,)).fetchone()
-    value = row[0] if row else None
-    return {"store_id": store_id,
-            "snapshot_date": value.isoformat() if hasattr(value, "isoformat") else value}
+        row = db.execute("SELECT MIN(snapshot_date), MAX(snapshot_date) FROM snapshots WHERE store_id=?",
+                         (store_id,)).fetchone()
+    first, last = row if row else (None, None)
+
+    def iso(value):
+        return value.isoformat() if hasattr(value, "isoformat") else value
+
+    return {"store_id": store_id, "snapshot_date": iso(last), "first_date": iso(first)}
 
 
 @app.post("/snapshots", status_code=201)
@@ -175,7 +179,11 @@ def create_run(payload: RunRequest, request: Request):
         current = list(db.execute("SELECT * FROM snapshots WHERE store_id=? AND snapshot_date=? ORDER BY product_id",
                                   (payload.store_id, cutoff)))
         if daily and {r["product_id"] for r in current} != set(s.MANIFEST["product_id_categories"]):
-            raise HTTPException(422, "Cutoff requires snapshots for all 20 products in S001")
+            span = db.execute("SELECT MIN(snapshot_date), MAX(snapshot_date) FROM snapshots WHERE store_id=?",
+                              (payload.store_id,)).fetchone()
+            available = f"{span[0]} to {span[1]}" if span and span[0] else "none"
+            raise HTTPException(422, f"Cutoff requires snapshots for all 20 products in S001: "
+                                     f"{cutoff} holds {len(current)}/20. Stored snapshots run {available}.")
         if not current:
             raise HTTPException(422, "No snapshots for this cutoff")
         first_day = str(payload.as_of_date - timedelta(days=28 if daily else 55))
