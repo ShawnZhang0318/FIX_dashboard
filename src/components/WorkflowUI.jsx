@@ -32,11 +32,12 @@ export function Badge({ status }) {
     </span>
   );
 }
-export function Metric({ label, value }) {
+export function Metric({ label, value, hint, tone = '' }) {
   return (
-    <article className="summary-card">
+    <article className={`summary-card${tone ? ` metric-${tone}` : ''}`}>
       <span className="summary-card__label">{label}</span>
       <strong className="summary-card__value">{value}</strong>
+      {hint && <span className="summary-card__hint">{hint}</span>}
     </article>
   );
 }

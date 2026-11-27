@@ -1,5 +1,6 @@
 import { createContext, useContext, useEffect, useMemo, useState } from 'react';
 import {workflowTranslations} from './workflow-translations.js';
+import {reportTranslations} from './report-translations.js';
 
 const LanguageContext = createContext(null);
 
@@ -118,7 +119,6 @@ const translations = {
     'Enter a different quantity and reason': '填写其他数量及原因',
     'Reviewed quantity': '审核后数量',
     'Reason': '原因',
-    'Available after API integration': '接入 API 后开放',
     'A reason will be required when modifying a recommendation': '修改建议时需要填写原因',
     'Save review': '保存审核结果',
     'The form will refresh from the saved case after submission.': '提交后，表单将显示已保存的案例信息。',
@@ -158,7 +158,7 @@ export function LanguageProvider({ children }) {
     language,
     setLanguage,
     toggleLanguage: () => setLanguage((current) => current === 'en' ? 'zh-CN' : 'en'),
-    t: (text) => language === 'zh-CN' ? workflowTranslations[text] ?? translations['zh-CN'][text] ?? text : text,
+    t: (text) => language === 'zh-CN' ? reportTranslations[text] ?? workflowTranslations[text] ?? translations['zh-CN'][text] ?? text : text,
   }), [language]);
 
   return <LanguageContext.Provider value={value}>{children}</LanguageContext.Provider>;

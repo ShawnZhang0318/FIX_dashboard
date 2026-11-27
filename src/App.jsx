@@ -5,6 +5,7 @@ import AnalysisPage from './pages/AnalysisPage.jsx';
 import ExceptionsPage from './pages/ExceptionsPage.jsx';
 import InventoryPage from './pages/InventoryPage.jsx';
 import LogsPage from './pages/LogsPage.jsx';
+import DashboardPage from './pages/DashboardPage.jsx';
 
 function NotFoundPage() {
   const { t } = useLanguage();
@@ -21,7 +22,8 @@ export default function App() {
   return (
     <Routes>
       <Route element={<AppLayout />}>
-        <Route index element={<Navigate to="/inventory" replace />} />
+        <Route index element={<Navigate to="/overview" replace />} />
+        <Route path="overview" element={<DashboardPage />} />
         <Route path="inventory" element={<InventoryPage />} />
         <Route path="analysis" element={<AnalysisPage />} />
         <Route path="analysis/:runId" element={<AnalysisPage />} />

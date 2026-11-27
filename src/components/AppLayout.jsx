@@ -4,17 +4,19 @@ import { NavLink, Outlet, useLocation } from 'react-router';
 import { useLanguage } from '../i18n.jsx';
 
 const navigation = [
+  { label: 'Overview', to: '/overview', icon: 'overview' },
   { label: 'Inventory', to: '/inventory', icon: 'inventory' },
   { label: 'Analysis', to: '/analysis', icon: 'analysis' },
-  { label: 'Exceptions', to: '/exceptions', icon: 'exceptions' },
-  { label: 'Logs', to: '/logs', icon: 'logs' },
+  { label: 'Review queue', to: '/exceptions', icon: 'exceptions' },
+  { label: 'History & logs', to: '/logs', icon: 'logs' },
 ];
 
 const pageNames = [
+  { match: '/overview', title: 'Overview' },
   { match: '/inventory', title: 'Inventory' },
   { match: '/analysis', title: 'Analysis' },
-  { match: '/exceptions', title: 'Exceptions' },
-  { match: '/logs', title: 'Logs' },
+  { match: '/exceptions', title: 'Review queue' },
+  { match: '/logs', title: 'History & logs' },
 ];
 
 function NavIcon({ name }) {
@@ -28,6 +30,7 @@ function NavIcon({ name }) {
     'aria-hidden': true,
   };
 
+  if (name === 'overview') return <svg {...common}><rect x="3" y="3" width="7" height="8" rx="1.5"/><rect x="14" y="3" width="7" height="5" rx="1.5"/><rect x="3" y="15" width="7" height="6" rx="1.5"/><rect x="14" y="12" width="7" height="9" rx="1.5"/></svg>;
   if (name === 'logs') return <svg {...common}><rect x="5" y="3" width="14" height="18" rx="2" /><path d="M9 8h6M9 12h6M9 16h4" /></svg>;
   if (name === 'inventory') {
     return (
@@ -90,22 +93,13 @@ export default function AppLayout() {
             >
               <NavIcon name={item.icon} />
               <span>{t(item.label)}</span>
-              {item.label === 'Exceptions' && <span className="nav-link-dot" aria-hidden="true" />}
             </NavLink>
           ))}
         </nav>
 
         <div className="sidebar-bottom">
-          <div className="connection-card">
-            <span className="connection-card__icon" aria-hidden="true">
-              <span />
-            </span>
-            <div>
-              <span className="connection-card__label">{t('API connection')}</span>
-              <strong>{t(config.localIntegration ? 'Local model integration' : config.mode==='mock'?'Mock demo':'Live API')}</strong>
-            </div>
-          </div>
-          <div className="sidebar-caption">{t('Forecasting & Inventory Exceptions')}</div>
+          <div className="sidebar-store"><span className="store-avatar">S</span><div><strong>{t('Store S001')}</strong><span>{t('Inventory & planning')}</span></div></div>
+          <details className="connection-details"><summary>{t('Data connection')}</summary><p>{t(config.mode === 'mock' ? 'Synthetic demo data in this browser' : 'Results are loaded from the configured API.')}</p>{config.mode === 'live' && <code>{config.apiBaseUrl}</code>}<a href="#/logs?source=backend">{t('View task logs')} →</a></details>
         </div>
       </aside>
 
@@ -119,7 +113,7 @@ export default function AppLayout() {
           <div className="topbar-actions">
             <span className="environment-badge">
               <span className="environment-badge__dot" />
-              {t(serverLogs ? 'Backend logs' : config.localIntegration ? 'Real model · Local SQLite' : config.mode==='mock'?'Mock demo':'Live API')}
+              {t(serverLogs ? 'Backend logs' : config.mode==='mock'?'Mock demo':config.localIntegration?'Local API':'Live API')}
             </span>
             <button
               className="language-toggle"
@@ -136,11 +130,10 @@ export default function AppLayout() {
         </header>
 
         <main className="main-content">
-          {!pathname.startsWith('/logs') && !pathname.startsWith('/inventory') && <div className="workflow-message workflow-notice">{t(config.localIntegration ? 'Local integration uses the trained model and a separate SQLite database. Daily analysis uses the newest stored store day and requires 29 consecutive dates up to it.' : config.mode==='mock'?'Synthetic fixtures only. No trained model or server database. Saved in this browser.':'Live API mode. Results come from the configured backend.')}</div>}
           <Outlet />
           <footer className="page-footer">
-            <span>{t('Project F.I.X. · Demo workspace')}</span>
-            <span>{t('Exception reviews are recorded separately')}</span>
+            <span>Project F.I.X. · {t('Inventory & planning')}</span>
+            <span>{t(config.mode === 'mock' ? 'Synthetic demo data in this browser' : 'Inventory decisions remain human-reviewed')}</span>
           </footer>
         </main>
       </div>

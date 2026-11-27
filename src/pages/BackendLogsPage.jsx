@@ -19,7 +19,7 @@ export default function BackendLogsPage() {
   const [filterError, setFilterError] = useState('');
   function search(event) {
     event.preventDefault();
-    const data = new FormData(event.currentTarget), next = new URLSearchParams();
+    const data = new FormData(event.currentTarget), next = new URLSearchParams({source: 'backend'});
     for (const name of LOG_FILTERS) {
       const value = String(data.get(name) || '').trim();
       if (value) next.set(name, ['from', 'to'].includes(name) ? new Date(value).toISOString() : value);
@@ -47,7 +47,7 @@ export default function BackendLogsPage() {
         <label className="field-group">{t('From (local time)')}<input className="field-value" type="datetime-local" name="from" defaultValue={localDate(filters.from)} /></label>
         <label className="field-group">{t('To (local time)')}<input className="field-value" type="datetime-local" name="to" defaultValue={localDate(filters.to)} /></label>
         <label className="field-group">{t('Message or event search')}<input className="field-value" name="query" defaultValue={filters.query || ''} /></label>
-        <div className="log-actions"><button className="primary-button" disabled={!backendLogsApi}>{t('Search server logs')}</button><button type="button" className="secondary-button" onClick={() => {setParams({}); setFilterError('');}}>{t('Clear filters')}</button></div>
+        <div className="log-actions"><button className="primary-button" disabled={!backendLogsApi}>{t('Search server logs')}</button><button type="button" className="secondary-button" onClick={() => {setParams({source: 'backend'}); setFilterError('');}}>{t('Clear filters')}</button></div>
       </form>
       {filterError && <p role="alert">{t(filterError)}</p>}
     </section>

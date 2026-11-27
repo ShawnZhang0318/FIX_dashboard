@@ -40,14 +40,14 @@ function AnalysisHistory() {
       </div>
       <div className="table-scroll">
         <table className="data-table analysis-history-table">
-          <thead><tr>{['Analysis date', 'Period', 'Created', 'Status', 'Run ID'].map(label => <th key={label}>{t(label)}</th>)}</tr></thead>
+          <thead><tr>{['Analysis date', 'Period', 'Created', 'Status', 'Results'].map(label => <th key={label}>{t(label)}</th>)}</tr></thead>
           <tbody>
             {rows.map(row => <tr key={row.runId}>
               <td>{row.asOfDate || t('Date unavailable')}</td>
               <td>{t(row.runType === 'monthly' ? 'Monthly' : row.runType === 'daily' ? 'Daily' : 'Unknown')}</td>
               <td><time dateTime={row.timestamp}>{new Date(row.timestamp).toLocaleString(language)}</time></td>
               <td><Badge status={row.status || 'queued'} /></td>
-              <td><Link className="text-link" to={runPath(row.runId)}>{row.runId}</Link></td>
+              <td><Link className="text-link" title={row.runId} to={runPath(row.runId)}>{t('View results')} →</Link></td>
             </tr>)}
             {!rows.length && <tr><td colSpan="5" className="analysis-history-empty">{t('No saved analyses yet. New runs will appear here.')}</td></tr>}
           </tbody>

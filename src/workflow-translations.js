@@ -1,4 +1,12 @@
 export const workflowTranslations = {
+  'Run Daily or Monthly analysis on stored store data. Past analyses are in Logs.': '基于已保存的门店数据运行每日或月度分析，历史分析可在日志中查看。',
+  'Historical trend analysis': '历史趋势分析',
+  'Monthly Analysis': '月度分析',
+  'Run Monthly Analysis': '运行月度分析',
+  'Compare recent sales trends and stockouts with the previous 28 days': '将最近 28 天与此前 28 天对比，检查销量趋势和缺货情况',
+  'Monthly analysis compares the recent 28 days with the previous 28 days for all 20 products, checking persistent high or low sales and recurring stockouts. Missing observations are reported as insufficient data.': '月度分析对全部 20 种商品的最近 28 天和此前 28 天进行对比，检查持续高销量、持续低销量和反复缺货。缺失观测将标记为数据不足。',
+  'Monthly analysis requires a live backend. The synthetic demo supports Daily only.': '月度分析需要连接真实后端；模拟演示仅支持每日分析。',
+  'This analysis uses stored observations through': '本次分析使用截至以下日期的已保存观测',
   'Run a Daily analysis for the newest stored store day. Past analyses are in Logs.': '按最近已保存的门店日期运行 Daily 分析，历史分析可在日志中查看。',
   'This run retains its original analysis date. Start a new analysis to use the newest stored date.': '本次分析保留原始分析日期；新建分析将使用最近已保存的日期。',
   'Daily analysis uses the newest stored store day and requires all 20 products plus 29 consecutive days of sales up to that date. Missing data is rejected by the API.': 'Daily 分析使用最近已保存的门店日期，需要全部 20 种商品以及截至该日期连续 29 天的销量数据；数据不完整时接口会拒绝。',

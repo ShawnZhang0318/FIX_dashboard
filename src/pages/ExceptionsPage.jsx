@@ -5,6 +5,7 @@ import { Feedback, Badge, Metric } from "../components/WorkflowUI.jsx";
 import { useLanguage } from "../i18n.jsx";
 import { useResource } from "../useResource.js";
 import { api, number, casePath, runPath, queuePath } from "../workflow.js";
+import {BarChart, ChartCard} from '../components/Charts.jsx';
 export default function ExceptionsPage() {
   const { caseId } = useParams();
   return caseId ? <ExceptionDetail key={caseId} caseId={caseId} /> : <Queue />;
@@ -16,22 +17,26 @@ function Queue() {
     status = params.get("status") || "";
   const state = useResource(
     useCallback(
-      options => api.getExceptions({ store_id: "S001", run_id: runId, status }, options),
-      [runId, status],
+      options => api.getExceptions({ store_id: "S001", run_id: runId }, options),
+      [runId],
     ),
   );
+  const all = state.data || [];
+  const rows = all.filter(c => !status || c.status === status).sort((a,b) =>
+    Number(b.status === 'pending_review') - Number(a.status === 'pending_review') || (b.result.recommended_order_quantity || 0) - (a.result.recommended_order_quantity || 0));
   return (
     <>
       <PageHeader
         eyebrow={t("Planner review")}
-        title={t("Exceptions")}
+        title={t("Review queue")}
         description={t(
           "Open a case to understand its forecast and record a review decision.",
         )}
       />
+      <div className="summary-grid"><Metric label={t('Awaiting review')} value={state.data ? all.filter(c => c.status === 'pending_review').length : '—'} hint={t('Recommendations awaiting a decision')} tone="amber"/><Metric label={t('Reviewed cases')} value={state.data ? all.filter(c => c.status !== 'pending_review').length : '—'} hint={t('Decisions already recorded')} /><Metric label={t('Total cases')} value={state.data ? all.length : '—'} hint={t(runId ? 'For the selected analysis' : 'Across saved analyses')} /></div>
       <section className="panel exceptions-panel">
         <div className="panel-heading">
-          <h2>{t("Exception queue")}</h2>
+          <div><h2>{t("Recommendations & alerts")}</h2><p>{t('Pending cases first. Open a product to check the evidence and record your decision.')}</p></div>
           {runId && (
             <Link className="text-link" to={runPath(runId)}>
               {t("Analysis run")}
@@ -85,15 +90,15 @@ function Queue() {
                     "Exception type",
                     "Status",
                     "Suggested quantity",
-                    "Run",
-                    "Decision",
+                    "Analysis date",
+                    "Next step",
                   ].map((s) => (
                     <th key={s}>{t(s)}</th>
                   ))}
                 </tr>
               </thead>
               <tbody>
-                {state.data.map((c) => (
+                {rows.map((c) => (
                   <tr key={c.id}>
                     <td>{c.result.product_id}</td>
                     <td>{t(c.exception_type)}</td>
@@ -106,17 +111,17 @@ function Queue() {
                         className="text-link"
                         to={runPath(c.analysis_run_id)}
                       >
-                        {t(c.parent_run_status)}
+                        {c.result.snapshot_date || t('View results')}
                       </Link>
                     </td>
                     <td>
                       <Link className="text-link" to={casePath(c.id)}>
-                        {t("Inspect")}
+                        {t(c.status === 'pending_review' ? 'Review' : 'View decision')}
                       </Link>
                     </td>
                   </tr>
                 ))}
-                {!state.data.length && (
+                {!rows.length && (
                   <tr>
                     <td colSpan="6">{t("No matching records.")}</td>
                   </tr>
@@ -165,6 +170,7 @@ function ExceptionDetail({ caseId }) {
               value={number(x.recommended_order_quantity)}
             />
           </div>
+          <ChartCard title={t('Why this product needs review')} description={`${number(x.horizon_days)} ${t('days')} · ${t('Cumulative demand over the lead time')}`}><BarChart label={t('Stock versus demand coverage')} rows={[{label: x.product_id, stock: x.inventory_at_prediction, demand: x.predicted_demand_p90}]} series={[{key: 'stock', label: t('On hand')}, {key: 'demand', label: t('Higher coverage estimate (P90)')}]} /></ChartCard>
           <div className="detail-layout">
             <section className="panel case-detail-panel">
               <div className="panel-heading">
@@ -172,14 +178,11 @@ function ExceptionDetail({ caseId }) {
                 <Badge status={c.status} />
               </div>
               <div className="workflow-body">
-                <p className="workflow-id">{caseId}</p>
                 <p>
                   {t("Forecast horizon")}: {number(x.horizon_days)} {t("days")}
                 </p>
-                <p>{x.explanation}</p>
-                <p>
-                  {t("Model version")}: {x.model_version}
-                </p>
+                <p>{t(c.exception_type === 'anomaly' ? 'This case flags unusual observations. Check the supporting data before recording a decision.' : 'Review the saved stock, lead-time demand estimate and suggested replenishment before recording a decision.')}</p>
+                <details className="method-note"><summary>{t('Technical details')}</summary><p>{x.explanation}</p><p className="workflow-id">{t('Case ID')}: {caseId}</p><p>{t('Model version')}: {x.model_version}</p>
                 <p>
                   {t("Policy")}: {x.policy_version}
                 </p>
@@ -187,6 +190,7 @@ function ExceptionDetail({ caseId }) {
                   {t("Input reference")}: {x.input_reference}
                 </p>
                 <p className="workflow-id">{t("Source snapshot")}: {x.snapshot_id}</p>
+                </details>
                 <Link className="text-link" to={runPath(c.analysis_run_id)}>
                   {t("Analysis run")} · {t(c.parent_run_status)}
                 </Link>

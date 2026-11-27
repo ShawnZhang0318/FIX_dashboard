@@ -1,483 +1,96 @@
-import { useCallback, useEffect, useRef, useState } from "react";
-import { Link, useNavigate, useParams } from "react-router";
-import PageHeader from "../components/PageHeader.jsx";
-import { Feedback, Badge, Metric } from "../components/WorkflowUI.jsx";
-import { validateRunResults } from "../../frontend/contracts.js";
-import { useLanguage } from "../i18n.jsx";
-import { useResource } from "../useResource.js";
-import { useSystemDate } from "../useSystemDate.js";
-import { isDate } from "../../frontend/requests.js";
-import {
-  api,
-  config,
-  number,
-  casePath,
-  runPath,
-  queuePath,
-} from "../workflow.js";
-
-const units = (value) => number(Number.isFinite(value) ? Math.ceil(value) : null);
+import {useCallback, useEffect, useRef, useState} from 'react';
+import {Link, useNavigate, useParams, useSearchParams} from 'react-router';
+import PageHeader from '../components/PageHeader.jsx';
+import {Feedback, Badge} from '../components/WorkflowUI.jsx';
+import {DailyReport, MonthlyReport, Diagnostics} from '../components/AnalysisReport.jsx';
+import {validateRunResults} from '../../frontend/contracts.js';
+import {useLanguage} from '../i18n.jsx';
+import {useResource} from '../useResource.js';
+import {isDate} from '../../frontend/requests.js';
+import {api, config, number, runPath} from '../workflow.js';
 
 export default function AnalysisPage() {
-  const { runId } = useParams();
-  return <AnalysisWorkspace key={runId || "new"} runId={runId} />;
+  const {runId} = useParams();
+  return <AnalysisWorkspace key={runId || 'new'} runId={runId} />;
 }
-function AnalysisWorkspace({ runId }) {
-  const systemDate = useSystemDate();
-  const { t } = useLanguage(),
-    navigate = useNavigate();
-  const monthlyRecommendationsAvailable = false;
-  const [scenario, setScenario] = useState("success");
-  const [mode, setMode] = useState("daily");
-  const [run, setRun] = useState(null),
-    [results, setResults] = useState(null),
-    [error, setError] = useState(null),
-    [createError, setCreateError] = useState(null),
-    [busy, setBusy] = useState(false),
-    [revision, setRevision] = useState(0);
-  // Stored runs retain their original date. Only the explicit synthetic demo uses a fixed fixture date.
-  // A live daily run demands a complete snapshot plus 29 days of history, and today is written at
-  // store close, so the cutoff is the newest date the API reports as runnable (cutoff_date), and the
-  // wall clock would be rejected with 422.
-  const spanState = useResource(useCallback(options =>
-    config.mode === 'live' && !runId ? api.getLatestSnapshot({store_id: 'S001'}, options) : Promise.resolve(null),
-  [runId]));
-  const latestStoredDate = config.mode === 'live' && !runId
-    ? (spanState.data?.cutoff_date || spanState.data?.snapshot_date || '')
-    : '';
-  const analysisDate = runId ? (run?.as_of_date || '') : config.mode === 'mock' ? '2022-06-30' : latestStoredDate;
-  const active = useRef(true),
-    submitting = useRef(false);
-  useEffect(() => {
-    active.current = true;
-    return () => {
-      active.current = false;
-    };
-  }, []);
+function AnalysisWorkspace({runId}) {
+  const {t} = useLanguage(), navigate = useNavigate();
+  const [params] = useSearchParams();
+  const [mode, setMode] = useState(params.get('period') === 'monthly' && config.mode === 'live' ? 'monthly' : 'daily');
+  const [scenario, setScenario] = useState('success');
+  const [run, setRun] = useState(null), [results, setResults] = useState(null);
+  const [error, setError] = useState(null), [createError, setCreateError] = useState(null);
+  const [busy, setBusy] = useState(false), [revision, setRevision] = useState(0);
+  const active = useRef(true), submitting = useRef(false);
+  const span = useResource(useCallback(options => config.mode === 'live' && !runId
+    ? api.getLatestSnapshot({store_id: 'S001'}, options) : Promise.resolve(null), [runId]));
+  // Preserve the API's runnable cutoff and the original date of stored runs.
+  const analysisDate = runId ? run?.as_of_date || '' : config.mode === 'mock' ? '2022-06-30' : span.data?.cutoff_date || span.data?.snapshot_date || '';
+  useEffect(() => {active.current = true; return () => {active.current = false;};}, []);
   useEffect(() => {
     if (!runId) return;
-    let cancelled = false,
-      timer;
+    let cancelled = false, timer;
     const controller = new AbortController();
-    setError(null);
-    setResults(null);
+    setError(null); setResults(null);
     async function poll() {
       try {
         const r = await api.getAnalysisRun(runId, {signal: controller.signal});
         if (cancelled) return;
-        if (!["queued", "processing", "completed", "failed"].includes(r.status))
-          throw Error("Unsupported run status: " + r.status);
+        if (!['queued', 'processing', 'completed', 'failed'].includes(r.status)) throw Error('Unsupported run status: ' + r.status);
         setRun(r);
         if (r.run_type) setMode(r.run_type);
         if (r.scenario) setScenario(r.scenario);
-        if (["queued", "processing"].includes(r.status)) {
-          timer = setTimeout(poll, config.pollMs);
-          return;
-        }
+        if (['queued', 'processing'].includes(r.status)) {timer = setTimeout(poll, config.pollMs); return;}
         const data = await api.getAnalysisResults(runId, {signal: controller.signal});
-        if (cancelled) return;
-        if (!Array.isArray(data.results))
-          throw Error("Invalid results response");
-        setResults(validateRunResults(r, data));
-      } catch (e) {
-        if (!cancelled) setError(e);
-      }
+        if (!cancelled) setResults(validateRunResults(r, data));
+      } catch(e) {if (!cancelled) setError(e);}
     }
     poll();
-    return () => {
-      cancelled = true;
-      clearTimeout(timer);
-      controller.abort();
-    };
+    return () => {cancelled = true; clearTimeout(timer); controller.abort();};
   }, [runId, revision]);
-  const running =
-    !!runId && (!run || ["queued", "processing"].includes(run.status));
   async function create(e) {
     e.preventDefault();
     if (runId || submitting.current || createError?.writeUncertain || !isDate(analysisDate)) return;
-    submitting.current = true;
-    setBusy(true);
-    setCreateError(null);
+    submitting.current = true; setBusy(true); setCreateError(null);
     try {
-      const data = await api.createAnalysisRun({
-        store_id: "S001",
-        run_type: mode,
-        // Post the date the page shows; re-reading the clock here would post today, which
-        // has no complete snapshot until the store closes.
-        as_of_date: config.mode === 'mock' ? '2022-06-30' : analysisDate,
-        scenario,
-      });
-      if (!data?.analysis_run?.id) throw Error("Missing analysis_run.id");
+      const data = await api.createAnalysisRun({store_id: 'S001', run_type: mode, as_of_date: analysisDate, scenario});
+      if (!data?.analysis_run?.id) throw Error('Missing analysis_run.id');
       if (active.current) navigate(runPath(data.analysis_run.id));
-    } catch (e) {
-      if (active.current) setCreateError(e);
-    } finally {
-      submitting.current = false;
-      if (active.current) setBusy(false);
-    }
+    } catch(e) {if (active.current) setCreateError(e);}
+    finally {submitting.current = false; if (active.current) setBusy(false);}
   }
-  return (
-    <>
-      <PageHeader
-        eyebrow={t("Daily demand planning")}
-        title={t(runId ? "Analysis run" : "Analysis")}
-        description={t(runId ? 'This run retains its original analysis date. Start a new analysis to use the newest stored date.' : "Run a Daily analysis for the newest stored store day. Past analyses are in Logs.")}
-      />
-      <div className="analysis-grid">
-        <section className="panel request-panel">
-          <div className="panel-heading">
-            <h2>{t("Choose an analysis period")}</h2>
+  const running = !!runId && (!run || ['queued', 'processing'].includes(run.status));
+  const monthly = mode === 'monthly';
+  return <>
+    <PageHeader eyebrow={t(runId ? 'Analysis results' : 'Demand & inventory planning')}
+      title={t(runId ? monthly ? 'Monthly Analysis' : 'Daily analysis' : 'Analysis')}
+      description={t(runId ? monthly ? 'Understand sustained sales changes and recurring stockouts.' : 'See demand coverage and the products that may need replenishment.' : 'Choose a question. We will turn stored data into a clear action list.')}
+      actions={runId ? <Link className="primary-button" to="/analysis">{t('New analysis')} ↗</Link> : <Link className="secondary-button" to="/logs">{t('Analysis history')}</Link>} />
+    {runId ? <>
+      <div className="report-context"><span>{t('Store')}: <strong>{run?.store_id || 'S001'}</strong></span><span>{t('Analysis date')}: <strong>{analysisDate || '—'}</strong></span>{run && <Badge status={run.status} />}</div>
+      {running && !error && <div className="run-progress panel" role="status"><span className="progress-spinner" /><div><strong>{t(run?.status === 'processing' ? 'Analysing store data…' : 'Waiting for analysis…')}</strong><p>{t('Results will appear here automatically. You can leave and return to this task.')}</p>{run && !monthly && <small>{t('Products processed')}: {number(run.processed_count)} / {number(run.expected_count)}</small>}</div></div>}
+      {run?.status === 'failed' && <div className="workflow-message workflow-error" role="alert"><strong>{t('Analysis could not finish')}</strong><p>{t('Check the task details below before starting another analysis.')}</p>{run.error && <p>{typeof run.error === 'string' ? run.error : JSON.stringify(run.error)}</p>}</div>}
+      <Feedback error={error} reload={() => setRevision(x => x+1)} />
+      {results && monthly && results.diagnostics && <MonthlyReport scan={results.diagnostics} />}
+      {results && !monthly && <DailyReport data={results} runId={runId} />}
+      {results?.diagnostics && !monthly && <Diagnostics scan={results.diagnostics} />}
+      <details className="panel task-details"><summary>{t('Task details & logs')}</summary><dl className="metadata-grid"><div><dt>{t('Run ID')}</dt><dd>{runId}</dd></div><div><dt>{t('Job ID')}</dt><dd>{run?.job?.id || '—'}</dd></div><div><dt>{t('Analysis date')}</dt><dd>{analysisDate || '—'}</dd></div><div><dt>{t('Status')}</dt><dd>{run ? t(run.status) : '—'}</dd></div></dl><Link className="text-link" to={`/logs?${new URLSearchParams({source: 'backend', run_id: runId, ...(run?.job?.id ? {job_id: run.job.id} : {})})}`}>{t('View task logs')} →</Link><p className="chart-footnote">{t('Saved results retain their original analysis date.')}</p></details>
+    </> : <div className="analysis-start-grid">
+      <section className="panel report-card analysis-start"><div className="report-card-heading"><div><span className="eyebrow">{t('01 · Choose your analysis')}</span><h2>{t('What would you like to understand?')}</h2></div></div>
+        <form onSubmit={create}>
+          <div className="analysis-mode-picker" role="group" aria-label={t('Analysis period')}>
+            {[{key: 'daily', title: 'Daily analysis', question: 'What needs replenishment?', copy: 'Compare stock with predicted demand over each product’s lead time.', icon: '↗'}, {key: 'monthly', title: 'Monthly Analysis', question: 'What has changed this month?', copy: 'Compare the recent 28 days with the previous 28 days to find persistent sales changes and stockouts.', icon: '▥'}].map(item => <button key={item.key} type="button" className={`analysis-mode-card${mode === item.key ? ' is-selected' : ''}`} aria-pressed={mode === item.key} disabled={busy || !!createError?.writeUncertain || (item.key === 'monthly' && config.mode === 'mock')} onClick={() => {setMode(item.key); setCreateError(null);}}><span className="mode-icon" aria-hidden="true">{item.icon}</span><span className="analysis-mode-card__title">{t(item.title)}</span><strong className="mode-question">{t(item.question)}</strong><span className="analysis-mode-card__summary">{t(item.copy)}</span><span className="mode-selected">{t(mode === item.key ? 'Selected' : 'Select analysis')} {mode === item.key ? '✓' : '→'}</span></button>)}
           </div>
-          <form onSubmit={create}>
-            <div className="analysis-mode-picker" role="group" aria-label={t("Analysis period")}>
-              <button
-                className={`analysis-mode-card${mode === "daily" ? " is-selected" : ""}`}
-                type="button"
-                aria-pressed={mode === "daily"}
-                disabled={!!runId || busy}
-                onClick={() => setMode("daily")}
-              >
-                <span className="analysis-mode-card__title">{t("Daily")}</span>
-                <span className="analysis-mode-card__summary">{t(runId ? 'Demand and replenishment for this run’s analysis date' : "Analyze today's demand and recommend replenishment")}</span>
-                <span className="analysis-mode-card__detail">{t(config.mode === "mock" ? "Demo data date" : "Analysis date")}: <strong>{analysisDate || '—'}</strong></span>
-              </button>
-              <button
-                className={`analysis-mode-card${mode === "monthly" ? " is-selected" : ""}`}
-                type="button"
-                aria-pressed={mode === "monthly"}
-                disabled={!!runId || busy || config.mode === "mock"}
-                onClick={() => setMode("monthly")}
-              >
-                <span className="analysis-mode-card__title">{t("Monthly")}</span>
-                <span className="analysis-mode-card__summary">{t("Forecast demand and recommendations for the next 30 days")}</span>
-                <span className="analysis-mode-card__detail">{t("Forecast window")}: <strong>{t("Next 30 days")}</strong></span>
-              </button>
-            </div>
-            {(config.mode === "mock" || !monthlyRecommendationsAvailable) && <p className="analysis-mode-note">{t("Monthly recommendations are not available yet. The current API monthly mode is a historical anomaly scan, so it will not be started here.")}</p>}
-            <p className="analysis-data-note">{t(config.mode === 'mock' ? 'Synthetic demo uses the fixed fixture date 2022-06-30. Live analysis uses the newest stored store day.' : runId ? 'This run retains its original analysis date. Start a new analysis to use the newest stored date.' : 'Daily analysis uses the newest stored store day and requires all 20 products plus 29 consecutive days of sales up to that date. Missing data is rejected by the API.')}</p>
-            {config.mode === 'live' && !runId && latestStoredDate && latestStoredDate !== systemDate && (
-              <p className="workflow-message" role="status">
-                {`${t('Today’s store close is not saved yet, so this analysis uses the newest stored date')}: ${latestStoredDate}`}
-              </p>
-            )}
-            {config.mode === 'live' && !runId && spanState.error && (
-              <Feedback error={spanState.error} reload={spanState.reload} />
-            )}
-            <div className="request-fields">
-              <label className="field-group">
-                {t("Store")}
-                <input className="field-value" disabled value="S001" />
-              </label>
-              {config.mode === "mock" && !runId && (
-                <label className="field-group">
-                  {t("Demo scenario")}
-                  <select
-                    className="field-value"
-                    value={scenario}
-                    disabled={running || busy}
-                    onChange={(e) => setScenario(e.target.value)}
-                  >
-                    {["success", "failure", "empty"].map((s) => (
-                      <option key={s} value={s}>
-                        {t(s)}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-              )}
-            </div>
-            <div className="request-footer">
-              {runId ? <Link className="primary-button" to="/analysis">{t('New analysis')}</Link> : <button className="primary-button" disabled={!isDate(analysisDate) || running || busy || createError?.writeUncertain || (mode === "monthly" && !monthlyRecommendationsAvailable)}>
-                {t(
-                  busy
-                    ? "Creating…"
-                    : running
-                      ? "Analysis in progress"
-                      : mode === "monthly" ? "Monthly Forecast Coming Soon" : "Run Daily Analysis",
-                )}
-              </button>}
-            </div>
-          </form>
+          {config.mode === 'mock' && <p className="analysis-mode-note">{t('Monthly analysis requires a live backend. The synthetic demo supports Daily only.')}</p>}
+          <div className="analysis-input-context"><div><span>{t('Store')}</span><strong>S001</strong></div><div><span>{t('Analysis date')}</span><strong>{analysisDate || '—'}</strong></div><span className="signal-tag">{t('Automatically selected from stored data')}</span></div>
+          <Feedback loading={span.loading && config.mode === 'live'} error={span.error} reload={span.reload} />
+          {span.data?.snapshot_date && span.data.snapshot_date !== analysisDate && <p className="data-quality-notice">{t('Latest record')}: {span.data.snapshot_date}. {t('The analysis uses the newest runnable cutoff. Gaps in history can move it back.')}</p>}
+          {config.mode === 'mock' && <label className="field-group">{t('Demo scenario')}<select className="field-value" value={scenario} disabled={busy || !!createError?.writeUncertain} onChange={e => setScenario(e.target.value)}>{['success', 'failure', 'empty'].map(s => <option key={s} value={s}>{t(s)}</option>)}</select></label>}
+          <div className="request-footer"><button className="primary-button" disabled={busy || !!createError?.writeUncertain || !isDate(analysisDate) || (monthly && config.mode === 'mock')}>{t(busy ? 'Creating…' : monthly ? 'Run Monthly Analysis' : 'Run Daily Analysis')} <span aria-hidden="true">→</span></button><span className="chart-footnote">{t('Analysis does not change inventory or place orders.')}</span></div>
           <Feedback error={createError} />
-        </section>
-        <section className="panel run-status-panel">
-          <div className="panel-heading">
-            <h2>{t("Run status")}</h2>
-            {run && <Badge status={run.status} />}
-          </div>
-          <div className="workflow-body">
-            {runId ? (
-              <>
-                <p className="workflow-id">
-                  {t("Run ID")}: {runId}
-                </p>
-                {run && (
-                  <>
-                    <p>
-                      {run.as_of_date} · {run.store_id}
-                    </p>
-                    <p className="workflow-id">{t("Job ID")}: {run.job.id} · {t(run.job.status)}</p>
-                    {run.run_type !== "monthly" && <p>
-                      {t("Products processed")}: {number(run.processed_count)} /{" "}
-                      {number(run.expected_count)}
-                    </p>}
-                    {run.error && (
-                      <p role="alert">
-                        {typeof run.error === "string"
-                          ? run.error
-                          : JSON.stringify(run.error)}
-                      </p>
-                    )}
-                  </>
-                )}
-              </>
-            ) : (
-              <p>{t("No run selected")}</p>
-            )}
-            <Feedback
-              loading={!!runId && !run && !error}
-              error={error}
-              reload={() => setRevision((x) => x + 1)}
-            />
-            {runId && (
-              <Link className="text-link" to={`/logs?${new URLSearchParams({source: 'backend', run_id: runId, ...(run?.job?.id ? {job_id: run.job.id} : {})})}`}>{t('View task logs')}</Link>
-            )}
-            {runId && (
-              <Link className="text-link" to="/analysis">
-                {t("Back to new analysis")}
-              </Link>
-            )}
-          </div>
-        </section>
-      </div>
-      {results?.diagnostics && <Diagnostics scan={results.diagnostics} />}
-      {results && (run?.run_type !== "monthly" || results.status === "failed") &&
-        <Results data={results} runId={runId} />}
-    </>
-  );
-}
-function Diagnostics({ scan }) {
-  const { t } = useLanguage();
-  const monthly = scan.mode === "monthly";
-  const rows = Object.entries(scan.products);
-  const flagged = rows.map(([product, findings]) => [
-    product, Object.entries(findings).filter(([, finding]) => finding.status === "anomaly"),
-  ]).filter(([, findings]) => findings.length);
-  const count = (status) => rows.filter(([, findings]) =>
-    Object.values(findings).some((finding) => finding.status === status)).length;
-  const incomplete = count("insufficient_data");
-  const limited = count("inventory_limited");
-
-  return (
-    <section className="panel inventory-panel">
-      <div className="panel-heading">
-        <h2>{t(monthly ? "Monthly full scan" : "Daily diagnostics")}</h2>
-        <span>{flagged.length} / {rows.length} {t("SKUs flagged")}</span>
-      </div>
-      <div className="workflow-body diagnostic-body">
-        {monthly && (
-          <div className="diagnostic-context">
-            <div>{t("Recent 28 days")}: {scan.recent_start} – {scan.as_of_date}</div>
-            <div>{t("Previous 28 days")}: {scan.reference_start} – {scan.reference_end}</div>
-          </div>
-        )}
-        {flagged.length ? (
-          <ul className="diagnostic-alert-list">
-            {flagged.map(([product, findings]) => (
-              <li key={product}>
-                <h3>{product}</h3>
-                {findings.map(([signal, finding]) => (
-                  <DiagnosticFinding key={signal} signal={signal} finding={finding} />
-                ))}
-              </li>
-            ))}
-          </ul>
-        ) : <p>{t("No anomalies detected in available data.")}</p>}
-        {(!!incomplete || !!limited) && (
-          <div className="diagnostic-context">
-            {!!incomplete && <div>{t("SKUs with incomplete checks")}: {incomplete}</div>}
-            {!!limited && <div>{t("SKUs with stock-limited sales checks")}: {limited}</div>}
-          </div>
-        )}
-      </div>
-    </section>
-  );
-}
-
-function DiagnosticFinding({ signal, finding }) {
-  const { t } = useLanguage();
-  let evidence;
-  if (signal === "high_sales") {
-    evidence = [
-      ["28-day daily average", units(finding.baseline)],
-      ["Today’s sales", units(finding.observed)],
-    ];
-  } else if (signal === "persistent_zero_stock") {
-    evidence = [["Consecutive zero-stock days",
-      `${finding.lower_bound ? "≥ " : ""}${number(finding.observed)}`]];
-  } else if (signal === "long_stockout") {
-    evidence = [
-      ["Zero-stock days (recent / previous)", `${number(finding.recent?.zero_days)} / ${number(finding.reference?.zero_days)}`],
-      ["Recent stockout episodes", number(finding.recent?.periods)],
-      ["Longest recent stockout (days)", number(finding.recent?.longest_streak)],
-    ];
-  } else {
-    evidence = [
-      ["Previous daily sales average", units(finding.reference_mean)],
-      ["Recent daily sales average", units(finding.recent_mean)],
-      ["Comparable weeks with this trend", `${number(finding.matching_weeks)} / ${number(finding.comparable_weeks)}`],
-    ];
-  }
-  return (
-    <div className="diagnostic-finding">
-      <strong>{t(signal === "high_sales" ? "Exceptionally high sales" : signal)}</strong>
-      {evidence.map(([label, value]) => <div key={label}>{t(label)}: {value}</div>)}
-    </div>
-  );
-}
-function Results({ data, runId }) {
-  const { t } = useLanguage(),
-    rows = data.results;
-  const exceptions = rows.filter((x) => x.case_id);
-  const total = exceptions.every((x) => Number.isFinite(x.recommended_order_quantity))
-    ? exceptions.reduce((s, x) => s + Math.ceil(x.recommended_order_quantity), 0)
-    : null;
-  return (
-    <>
-      {(data.partial || data.status === "failed") && (
-        <p className="workflow-message workflow-error" role="alert">
-          {t(
-            "Partial results. Review is disabled until a complete successful run.",
-          )}
-        </p>
-      )}
-      <div className="summary-grid">
-        <Metric label={t("Products processed")} value={rows.length} />
-        <Metric label={t("Suggested quantity")} value={units(total)} />
-        <Metric
-          label={t("Exceptions")}
-          value={exceptions.length}
-        />
-      </div>
-      <section className="panel inventory-panel">
-        <div className="panel-heading">
-          <div>
-            <h2>{t("Daily sales predictions")}</h2>
-            <p>{t("Cumulative demand per product over its lead-time horizon at P50 and P90. The model does not forecast a single day in isolation.")}</p>
-          </div>
-        </div>
-        <div className="table-scroll">
-          <table className="data-table">
-            <thead>
-              <tr>
-                {[
-                  "Product ID",
-                  "On hand",
-                  "Forecast horizon",
-                  "Demand forecast (P50)",
-                  "Demand forecast (P90)",
-                  "Suggested quantity",
-                ].map((x) => (
-                  <th key={x}>{t(x)}</th>
-                ))}
-              </tr>
-            </thead>
-            <tbody>
-              {rows.map((x) => (
-                <tr key={x.product_id}>
-                  <td>{x.product_id}</td>
-                  <td>{units(x.inventory_at_prediction)}</td>
-                  <td>
-                    {number(x.horizon_days)} {t("days")}
-                  </td>
-                  <td>{units(x.predicted_demand_p50 ?? x.predicted_demand_point)}</td>
-                  <td>{units(x.predicted_demand_p90)}</td>
-                  <td>{units(x.recommended_order_quantity)}</td>
-                </tr>
-              ))}
-              {!rows.length && (
-                <tr>
-                  <td colSpan="6">{t("No forecast results were saved for this run.")}</td>
-                </tr>
-              )}
-            </tbody>
-          </table>
-        </div>
+        </form>
       </section>
-      <section className="panel inventory-panel">
-        <div className="panel-heading">
-          <h2>{t("Forecast exceptions")}</h2>
-          <Link className="secondary-button" to={queuePath(runId)}>
-            {t("Review exceptions")}
-          </Link>
-        </div>
-        <div className="table-scroll">
-          <table className="data-table">
-            <thead>
-              <tr>
-                {[
-                  "Product ID",
-                  "On hand",
-                  "Forecast horizon",
-                  "Demand forecast (P90)",
-                  "Suggested quantity",
-                  "Decision",
-                ].map((x) => (
-                  <th key={x}>{t(x)}</th>
-                ))}
-              </tr>
-            </thead>
-            <tbody>
-              {exceptions.map((x) => (
-                <tr key={x.id}>
-                  <td>{x.product_id}</td>
-                  <td>{units(x.inventory_at_prediction)}</td>
-                  <td>
-                    {number(x.horizon_days)} {t("days")}
-                  </td>
-                  <td>
-                    {units(x.predicted_demand_p90)}
-                  </td>
-                  <td>{units(x.recommended_order_quantity)}</td>
-                  <td>
-                    <Link className="text-link analysis-inspect-link" to={casePath(x.case_id)}>
-                      {t("Inspect")}
-                    </Link>
-                  </td>
-                </tr>
-              ))}
-              {!exceptions.length && (
-                <tr>
-                  <td colSpan="6">
-                    {t(data.partial || data.status === 'failed' ? 'No forecast exceptions were saved before this run stopped.' : 'No forecast exceptions.')}
-                  </td>
-                </tr>
-              )}
-            </tbody>
-          </table>
-        </div>
-      </section>
-      {!!exceptions.length && (
-        <details className="panel workflow-body">
-          <summary>{t("Result traceability")}</summary>
-          {exceptions.map((x) => (
-            <details key={x.id}>
-              <summary>
-                {x.product_id} · {x.model_version}
-              </summary>
-              <p>{x.explanation}</p>
-              <p className="workflow-id">{t("Source snapshot")}: {x.snapshot_id}</p>
-              <p>{t("Processed at")}: {x.processed_at} · {number(x.duration_ms)} ms</p>
-              <p>
-                {t("Policy")}: {x.policy_version}
-              </p>
-              <p className="workflow-id">
-                {t("Input reference")}: {x.input_reference}
-              </p>
-            </details>
-          ))}
-        </details>
-      )}
-    </>
-  );
+      <aside className="panel report-card analysis-guide"><span className="eyebrow">{t('02 · What you will get')}</span><h2>{t(monthly ? 'A clearer view of change' : 'A replenishment action list')}</h2><ol className="guide-steps"><li><strong>{t(monthly ? 'Spot persistent changes' : 'Check stock coverage')}</strong><p>{t(monthly ? 'Find products with sustained sales growth or decline.' : 'See saved stock alongside expected demand for each lead time.')}</p></li><li><strong>{t(monthly ? 'Understand the evidence' : 'Review suggested quantities')}</strong><p>{t(monthly ? 'Compare daily averages, weekly consistency and stockout days.' : 'Identify products needing attention and inspect the recommendation.')}</p></li><li><strong>{t(monthly ? 'Explore each product' : 'Record a decision')}</strong><p>{t(monthly ? 'Open a product to inspect its recorded daily sales.' : 'Approve, adjust or reject a recommendation in the review queue.')}</p></li></ol><details className="method-note"><summary>{t('Data requirements & method')}</summary><p>{t(monthly ? 'Monthly checks need 56 consecutive observations per product. Sales comparisons use matched weekdays with positive stock in both periods. Missing data is reported separately.' : 'Daily analysis needs all 20 products and 29 consecutive dates. P50 is the median cumulative demand; P90 is the higher coverage estimate over the product’s lead time.')}</p></details></aside>
+    </div>}
+  </>;
 }

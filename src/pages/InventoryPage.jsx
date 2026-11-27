@@ -8,6 +8,7 @@ import { api, number } from "../workflow.js";
 import SnapshotTransferPanel from "../components/SnapshotTransferPanel.jsx";
 import {InventorySchedule, useInventorySchedule} from "../components/InventorySchedule.jsx";
 import { loadInventoryDay, localToday } from "../../frontend/daily-data.js";
+import {BarChart, ChartCard} from '../components/Charts.jsx';
 
 const isForecast = row => row.source_reference?.startsWith('forecast_auto/');
 const isSimulated = row => isForecast(row) || row.source_reference?.startsWith('historical_simulation/') ||
@@ -27,6 +28,7 @@ function total(rows, field) {
 export default function InventoryPage() {
   const { t } = useLanguage(),
     [search, setSearch] = useState("");
+  const [stockFilter, setStockFilter] = useState('all');
   const [selectedDate, setSelectedDate] = useState('');
   const schedule = useInventorySchedule();
   const latestSettlement = schedule.data?.last_settled_date;
@@ -41,7 +43,7 @@ export default function InventoryPage() {
   const filtered = rows.filter((x) =>
       (x.product_id + " " + (x.category_raw || ""))
         .toLowerCase()
-        .includes(search.toLowerCase()),
+        .includes(search.toLowerCase()) && (stockFilter !== 'zero' || x.inventory_level === 0),
     );
   return (
     <>
@@ -57,8 +59,7 @@ export default function InventoryPage() {
           </Link>
         }
       />
-      <InventorySchedule state={schedule} />
-      <h2 className="inventory-history-title">{t('Inventory history')}</h2>
+      <div className="report-context"><span>{t('Store')}: <strong>S001</strong></span><span>{t('Data date')}: <strong>{date || '—'}</strong></span><span>{t(simulatedCount ? 'Includes simulated records' : 'Saved inventory observations')}</span></div>
       <div className="panel daily-date-toolbar">
         <label className="field-group">{t('Data date')}
           <input className="field-value" type="date" max={schedule.data?.business_date || localToday()} value={selectedDate || date}
@@ -87,6 +88,9 @@ export default function InventoryPage() {
             </>}
           </div>
           {rows.length < inventory.length && <p className="workflow-message" role="status">{t(rows.length ? 'Only part of the inventory is recorded for this date.' : 'No inventory has been recorded for this date.')} ({rows.length}/{inventory.length})</p>}
+          <ChartCard title={t('Stock & sales by product')} description={t('6 products with the lowest closing stock. Stock alone does not determine replenishment needs.')}>
+            <BarChart label={t('Stock & sales by product')} rows={[...rows].sort((a,b) => a.inventory_level-b.inventory_level).slice(0,6).map(row => ({label: row.product_id, stock: row.inventory_level, sales: row.units_sold}))} series={[{key: 'stock', label: t('Closing stock')}, {key: 'sales', label: t('Daily units sold')}]} />
+          </ChartCard>
           <section className="panel inventory-panel">
             <div className="panel-heading">
               <div>
@@ -106,6 +110,7 @@ export default function InventoryPage() {
                 />
               </label>
               <span>{t('Store')}: S001 · {t('Data date')}: {date || '—'}</span>
+              <div className="filter-chips" role="group" aria-label={t('Stock filter')}><button className={stockFilter === 'all' ? 'is-active' : ''} aria-pressed={stockFilter === 'all'} onClick={() => setStockFilter('all')}>{t('All products')}<span>{rows.length}</span></button><button className={stockFilter === 'zero' ? 'is-active' : ''} aria-pressed={stockFilter === 'zero'} onClick={() => setStockFilter('zero')}>{t('Zero stock')}<span>{rows.filter(row => row.inventory_level === 0).length}</span></button></div>
             </div>
             <div className="table-scroll">
               <table className="data-table daily-observations-table">
@@ -153,6 +158,7 @@ export default function InventoryPage() {
           </section>
         </>
       )}
+      <details className="panel task-details"><summary>{t('Automatic settlement & schedule')}</summary><InventorySchedule state={schedule} /></details>
       <SnapshotTransferPanel />
     </>
   );
