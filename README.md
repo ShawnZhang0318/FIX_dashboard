@@ -18,7 +18,7 @@ The current scope is one store, **S001**, and its 20 products. The system uses t
 | **Review queue** (`#/exceptions`) | Inspect replenishment and anomaly cases, then approve, adjust, reject, or resolve them as appropriate. |
 | **History & logs** (`#/logs`) | Reopen analyses recorded in this browser, inspect browser diagnostics, or query and export backend execution logs. |
 
-<details>
+<details open>
 <summary>Overview screenshot — local example data</summary>
 
 ![Overview dashboard with stock, sales, and data coverage](docs/images/overview.jpg)
@@ -37,7 +37,7 @@ The current scope is one store, **S001**, and its 20 products. The system uses t
 
 P50 is the median cumulative demand estimate; P90 is a higher coverage estimate over the same lead-time horizon. **Monthly analysis examines historical observations; it does not forecast the next 30 days or create replenishment review cases.** Sales comparisons use matched weekdays with positive stock in both periods.
 
-<details>
+<details open>
 <summary>Monthly analysis screenshot — local example data</summary>
 
 ![Monthly analysis with conclusions and previous/recent sales comparison](docs/images/monthly-analysis.jpg)
