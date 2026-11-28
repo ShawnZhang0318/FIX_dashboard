@@ -1,269 +1,136 @@
-# Project F.I.X. Operations Notes
+# Project F.I.X. operations guide
 
-**MAIE 6000C · Group 5**
+**Operator target** · One Windows machine, store `S001`, 20 products, real FastAPI services, trained LightGBM model and local SQLite. Run commands in PowerShell from the repository root. Open Overview for the latest stock and sales, Analysis for Daily forecasts or Monthly diagnostics, and Review queue for planner decisions. For the final demonstration and its evidence, see the [Week 13 checkpoint](../submissions/week13/README.md).
 
-Adapted from the [course operations template](https://github.com/aryansethi21052001/maie6000c/blob/main/docs/operations.md), using its six operational topics and commands supported by Project F.I.X.
+## 1. Local startup
 
-**Implementation reference:** `492ee212004c5ec2c1fee8bebcee66581f04adfe`, inspected on 2026-10-31. Commands use **Windows PowerShell from the repository root**. See the [root README](../README.md) for installation and [architecture](architecture.md) for design. The [Week 07 milestone README](../submissions/week07/README.md) now exists; use its [artifact index](../submissions/week07/README.md#9-artifact-index) for actual screenshots, slides, and execution evidence. Its screenshot and slide references still need usable links at this revision. Keep document availability separate from evidence completeness.
-
-## Local startup
-
-**Execution mode:** these steps run real FastAPI and AI services, a separate worker, and persistent storage. The integrated dashboard selects `live` mode on localhost/127.0.0.1 and calls `http://127.0.0.1:8000`; it does not switch to mock data if the backend is unavailable. Starting only the frontend is insufficient. The separate mock mode uses synthetic fixtures and browser storage.
-
-**Verification scope:** the [README's current-status summary](../README.md#currently-works-local-integration) records historical local acceptance. Railway is an online fallback with partial cloud acceptance; the complete hosted path still needs recorded health, database, worker, result/review, and log checks. This documentation revision does not claim a fresh local or hosted acceptance run.
-
-**Standard demonstration settings:** dashboard `http://127.0.0.1:5174/FIX_dashboard/`, public API `http://127.0.0.1:8000`, private AI `http://127.0.0.1:8001`, store **S001**, and analysis date **2023-11-15**. These match the README, presentation date, and historical results. Reproduce these settings consistently; document any alternate session configuration separately and verify a new date before changing the demonstration.
-
-### 1. Prepare the environment
-
-Complete the [README prerequisites and installation](../README.md#quick-start-local-model-demo-on-windows): install frontend dependencies, create `.venv-model` using Python 3.12, and install `ai/requirements-dev.txt`.
-
-| Setting | Use |
-| --- | --- |
-| `FIX_DATABASE_URL` | Leave unset for SQLite. For PostgreSQL, give API and worker the same PostgreSQL URL. Connection failure does not fall back to SQLite. |
-| `FIX_AI_URL` | Worker-to-AI URL; default `http://127.0.0.1:8001`. |
-| `FIX_STORE_TIMEZONE` / `FIX_STORE_CLOSE_TIME` | Store time zone and daily inventory settlement time. Defaults are `Asia/Shanghai` and `22:00`. Use matching settings for the API and worker. |
-| `VITE_BASE_PATH` | `/FIX_dashboard/` for the local URL below. |
-| `FIX_ALLOWED_ORIGINS` | Optional comma-separated exact frontend origins. Defaults allow localhost/127.0.0.1 on ports 5173 and 5174. |
-
-The startup script sets `FIX_LOCAL_STATE` to the repository's `.local-integration` directory. Do not assume a `.env` file configures these Python processes. Database credentials belong only in backend environments, never browser configuration or Git.
-
-### 2. Start the services and check readiness
+Install Git, Node.js 22.12 or later in the Node 22 line (including npm), and Python 3.12 with the Windows `py` launcher. From a fresh clone of [the project repository](https://github.com/ShawnZhang0318/FIX_dashboard), open the directory containing `package.json`. Use the CSV and model artifacts from the same revision. Ports 5174, 8000 and 8001 must be available.
 
 ```powershell
+npm ci
+py -3.12 -m venv .venv-model
+.\.venv-model\Scripts\python.exe -m pip install -r ai/requirements-dev.txt
 $env:VITE_BASE_PATH = '/FIX_dashboard/'
-.\scripts\start-local-demo.ps1
+$env:FIX_STORE_TIMEZONE = 'Asia/Shanghai'
+$env:FIX_STORE_CLOSE_TIME = '22:00'
 $apiBase = 'http://127.0.0.1:8000'
-Invoke-RestMethod 'http://127.0.0.1:8001/health/ready'
-Invoke-RestMethod "$apiBase/health/ready"
+.\scripts\start-local-demo.ps1
 ```
 
-The script builds the dashboard and starts the public API, worker, private AI service, and frontend preview. Ports **8000**, **8001**, and **5174** must be free. It records process IDs/start times in `.local-integration/processes.json` and redirects console output to that directory.
+Leave `FIX_DATABASE_URL` unset for this demo. The launcher builds the dashboard, runs the API on port 8000, starts the worker and private AI service (8001), and serves the dashboard on 5174. The processes share `.local-integration/`, including `fix.sqlite3`, backend logs and the process list. The browser uses the public API on loopback, where the demo has no login or authenticated reviewer identity. GitHub Pages serves sample data by default. A hosted build can use a public backend through `VITE_FIX_API_URL`. The connection badge identifies the selected mode. Verify the hosted services separately; Railway remains a fallback with partial acceptance. [Runtime configuration](../public/runtime-config.js) · [Railway deployment notes](railway-deploy-zh.md)
 
-Wait for both readiness checks to return HTTP 200 before importing or submitting work. Repeat checks during startup; inspect logs if they keep failing. Do not launch additional copies. Use `start-local-demo.ps1 -BackendOnly` only when a separately managed frontend is already available.
-
-### 3. Load demo data
+Once both readiness checks below return HTTP 200, import the historical dataset and confirm the reference date.
 
 ```powershell
 .\.venv-model\Scripts\python.exe -m local_backend.import_csv
-@(Invoke-RestMethod "$apiBase/inventory?store_id=S001").Count
-@(Invoke-RestMethod "$apiBase/snapshots?store_id=S001&from=2023-11-15&to=2023-11-15").Count
+$stock = Invoke-RestMethod "$apiBase/inventory?store_id=S001"
+$cutoffRows = Invoke-RestMethod "$apiBase/snapshots?store_id=S001&from=2023-11-15&to=2023-11-15"
+$stock.Count
+$cutoffRows.Count
 ```
 
-The importer verifies the source CSV checksum and sends **14,620 S001 observations** through the public API in batches of up to 100. Both counts should be **20**. Re-running verifies and skips identical records; conflicts are rejected. Each batch is atomic, while earlier committed batches survive a later failure.
+Expect **20** for each count. The importer checks the CSV against the model manifest, selects 14,620 S001 rows, and sends batches of up to 100 through `POST /snapshots`. After an interruption, run the importer again. It verifies previously saved rows and submits the missing ones. A source mismatch requires investigation. [Importer](../local_backend/import_csv.py)
 
-The worker settles simulated sales and replenishment at the configured closing time. Read `GET /inventory/automation?store_id=S001` for the next due date and settlement status. After settlement, compare the saved daily receipt at `GET /sales/day?business_date=YYYY-MM-DD` with the 20 snapshots for that date. Each closing balance equals opening stock minus units sold plus replenishment received. While the worker is offline the due date stays pending. After restart it processes missed days in order. For a blocked day inspect the worker event `inventory.settlement_blocked` and the worker console. The [daily inventory guide](daily-data-entry-zh.md) describes forecast sources and how imported history is preserved.
-
-### 4. Submit an analysis
-
-Open the [dashboard](http://127.0.0.1:5174/FIX_dashboard/#/analysis), choose **2023-11-15**, and select **Run Daily Analysis**. The [public API documentation](http://127.0.0.1:8000/docs) is also available.
-
-Alternatively, this API request creates **one persisted analysis**, not a health check:
+## 2. Health checks
 
 ```powershell
-$requestId = [guid]::NewGuid().ToString()
-Write-Output "Creation request ID: $requestId"
-$body = @{store_id='S001'; run_type='daily'; as_of_date='2023-11-15'} | ConvertTo-Json
-$response = Invoke-WebRequest -UseBasicParsing -Method Post `
-    -Uri "$apiBase/analysis-runs" -ContentType 'application/json' `
-    -Headers @{'X-Request-ID'=$requestId} -Body $body
-$response.StatusCode
-$created = $response.Content | ConvertFrom-Json
-$runId = $created.analysis_run.id
-$jobId = $created.job.id
-$created | ConvertTo-Json -Depth 4
+Invoke-RestMethod "$apiBase/health/live"
+Invoke-RestMethod "$apiBase/health/ready"
+Invoke-RestMethod 'http://127.0.0.1:8001/health/ready'
+Invoke-RestMethod "$apiBase/inventory/automation?store_id=S001"
+Invoke-RestMethod "$apiBase/snapshots/latest?store_id=S001"
 ```
 
-Expect HTTP **202** and saved Run/Job IDs. Choose either the dashboard or API submission; using both creates two tasks. Supported inputs require S001, Daily mode, a cutoff on or after **2023-09-01**, all 20 cutoff-day snapshots, and 29 consecutive daily observations per product. Monthly analysis is not implemented.
+| Signal | What the operator should see |
+| --- | --- |
+| API live | `status=ok` and the intended database type. |
+| API ready | `database=available`, `worker=available`. Readiness runs a database query and checks for a heartbeat less than 30 seconds old. |
+| AI ready | `service=ai`, `status=ok` once the predictor has loaded. AI HTTP liveness is also available at `/health/live` on port 8001. |
+| Inventory automation | The store's business date, time zone, closing time, status, next scheduled close and last settled date. A newly enabled installation can have a null last settled date. |
+| Snapshot coverage | `snapshot_date` is the latest stored date. `cutoff_date` is the latest model-eligible date with 29 complete S001 days. Gaps may put the usable cutoff earlier than the latest stock balance. |
 
-### 5. Confirm worker processing and persisted output
+If readiness is still starting, repeat the checks before submitting work. For a database, model or worker error, use section 5. [Local overview](http://127.0.0.1:5174/FIX_dashboard/#/overview) · [Public API explorer](http://127.0.0.1:8000/docs)
 
-Use the returned `$runId`, or set it to an ID copied from the dashboard:
+## 3. Run and verify the two workflows
+
+### Run a planner analysis
+
+Open **Analysis** and note the displayed cutoff. Both modes use the API's latest runnable Daily cutoff when available and otherwise try the latest snapshot date. **Run Daily Analysis** calculates replenishment forecasts for eligible products. **Run Monthly Analysis** compares two successive 28-day periods across the catalog and surfaces persistent sales changes and stockouts. Monthly results appear under `diagnostics` and need 56 consecutive observations per product for complete checks. The live UI supports both modes. Mock mode supports Daily only.
+
+For the fixed historical regression, run the acceptance script against the local stack after import. It submits the script's fixed cutoff date, store `S001` and mode `daily` to `POST /analysis-runs`. Each invocation creates a persisted run and records an advisory review. Use a demo database and run outside the scheduled store close, because the check compares inventory before and after review.
 
 ```powershell
-Invoke-RestMethod "$apiBase/analysis-runs/$runId" | ConvertTo-Json -Depth 6
-Invoke-RestMethod "$apiBase/analysis-runs/$runId/results" | ConvertTo-Json -Depth 10
+node scripts/verify-local-demo.mjs
+if ($LASTEXITCODE -ne 0) { throw 'Acceptance check failed. Inspect the API and worker logs.' }
+$proof = Get-Content -Raw -LiteralPath .local-integration/verification.json | ConvertFrom-Json
+$runId = $proof.run.id
+Invoke-RestMethod "$apiBase/analysis-runs/$runId" | Select-Object id,status,processed_count,expected_count,partial
+"http://127.0.0.1:5174/FIX_dashboard/#/analysis/$runId"
 ```
 
-| Stage | Run status | Job status |
-| --- | --- | --- |
-| Accepted | `queued` | `pending` |
-| Processing | `processing` | `claimed` |
-| Successful completion | `completed` | `completed` |
-| Handled execution failure | `failed` | `failed` |
+The API persists the run and job before returning HTTP 202. The worker claims the job, sends cutoff-safe inputs to the private AI service, then saves product forecasts and any exception cases. Daily jobs progress from `queued/pending` to `processing/claimed`, then `completed/completed` or `failed/failed` (Run/Job). The reference run should return **20 of 20** products with `status=completed` and `partial=false`. For `P0001`, cutoff stock is 82 and the cumulative lead-time forecasts are approximately 424.04 (P50) and 648.03 (P90). The suggested order is 567 units. Open the displayed run URL or read `/analysis-runs/{run_id}/results` to inspect the saved output. The script reads back the approval and checks the correlated log export. Review decisions are advisory. [Acceptance script](../scripts/verify-local-demo.mjs)
 
-For a successful full-store run, check `processed_count = expected_count = 20`, `partial = false`, and 20 persisted results. Intermediate states may finish before the next poll; correlated logs retain the processing events. Open an exception and save a review after completion. Reviews are advisory and do not change stock or place orders.
+### Inspect the daily inventory settlement
 
-For the team's [Railway online fallback](https://fixdashboard-production.up.railway.app/), follow the [Railway guide](railway-deploy-zh.md) and [hosted verification checklist](../README.md#railway-fallback-and-partial-cloud-acceptance). The intended hosted system has separate API, worker, AI, and PostgreSQL services. GitHub Pages uses mock mode under the default static configuration unless a hosted API URL is supplied. Record actual hosted results and log coverage, with the tested commit and date, separately from local acceptance.
+Every day at **22:00 Beijing time**, the worker computes and posts a **simulated** sale and replenishment for each product. With 29 consecutive snapshots through yesterday and a supported cutoff, it derives daily demand from the model's lead-time P50 and sets the stock target from P90. With insufficient recent history it uses the historical seasonal baseline and records that source. Model service errors block settlement and are retried. Sales are capped at opening stock, then forecast replenishment is credited as a simulated same-day receipt.
 
-## Health endpoints
-
-| Check | Local URL | Meaning |
-| --- | --- | --- |
-| API live | `http://127.0.0.1:8000/health/live` | API responds and reports its selected database type. |
-| API ready | `http://127.0.0.1:8000/health/ready` | A database query succeeds and worker heartbeat age is under 30 seconds. |
-| AI live | `http://127.0.0.1:8001/health/live` | AI HTTP service responds. |
-| AI ready | `http://127.0.0.1:8001/health/ready` | The model object has loaded. |
-
-API readiness returns 503 for a missing/stale heartbeat; database errors can also prevent a successful response. It does not check AI readiness. AI readiness does not replace a prediction test. Inspect both services and a completed persisted run for end-to-end acceptance.
-
-The worker updates its heartbeat while polling and after saving each product. Long inference can make it stale. The heartbeat is not a job lease and does not recover abandoned claims.
-
-## Metrics
-
-**Current status:** API/AI `/metrics`, Prometheus, and an `observability` Compose profile are **not implemented**. The template's metrics commands do not apply to this checkout.
-
-Available signals are health responses, persisted task status, processed/expected counts, partial-result flags, timestamps, per-product `duration_ms`, and correlated backend logs. Use **View task logs** from an analysis or the dashboard's `#/logs` page. Filter by Run, Job, Request, Trace, Case, service, level, stage, or time. Event timestamps are UTC; browser diagnostics are separate from backend execution logs.
-
-API/worker events and collected AI events are stored in the database. The AI wrapper appends application events to `.local-integration/ai-events.jsonl`; the API collects them when logs are queried. This requires the expected shared local state directory. Separate Railway containers do not share this file, so AI coverage is incomplete until a shared collector or protected event-ingestion service is implemented. Inspect the AI deployment console in the meantime.
-
-Log `coverage` reports collected application sources, not every operating-system or library message. Queries use frozen snapshots for stable pagination/export; refresh to include newer events. No automatic retention or query-snapshot cleanup is implemented. Stop auto-refresh when finished, use focused filters, and monitor database growth. Prometheus instrumentation, alerts, and an agreed retention policy remain future work.
-
-## Common useful commands
-
-### Stop, restart, and inspect listeners
-
-Pause submissions, let known work finish, and preserve required console logs before maintenance. Then stop recorded services:
+On the inventory page expand **Automatic settlement & schedule** to inspect the next close. Choose a completed date and check **closing stock = opening stock − units sold + replenishment received**. To inspect the last completed receipt and its snapshots from the API, use:
 
 ```powershell
-.\scripts\stop-local-demo.ps1
+$schedule = Invoke-RestMethod "$apiBase/inventory/automation?store_id=S001"
+$day = $schedule.last_settled_date
+if ($day) {
+    Invoke-RestMethod "$apiBase/sales/day?business_date=$day" |
+        Select-Object business_date,mode,total_units_sold,total_units_replenished
+    $items = Invoke-RestMethod "$apiBase/snapshots?store_id=S001&from=$day&to=$day"
+    $items | Select-Object product_id,opening_quantity,predicted_units_sold,units_sold,units_replenished,inventory_level,forecast_source
+}
 ```
 
-The script checks recorded process IDs/start times and relevant Python children. It does not drain jobs or manage every independently started process. Normal shutdown preserves the database and AI event file; restart using Local startup and recheck readiness. The next scripted start overwrites redirected stdout/stderr files.
+All products and the day's receipt commit together. Reprocessing a saved close leaves stock unchanged. The worker catches up dates missed **since activation** when it restarts. Gaps preceding activation remain visible. The case-review endpoint and the inventory worker have separate responsibilities. [Inventory guide](daily-data-entry-zh.md)
 
-To inspect occupied ports without terminating unrelated processes:
+## 4. Metrics, logs and verification commands
+
+Use `processed_count / expected_count`, `partial`, timestamps, per-result `duration_ms`, worker heartbeat and settlement status as operational signals. In **History & logs**, recent analyses come from this browser's retained activity. Open **Task details & logs** on a saved run or the backend log view to follow a Run, Job, Request or Case ID. Backend event timestamps are UTC. Current monitoring uses application logs and health endpoints; Prometheus instrumentation and alerting remain future work.
+
+To export all events matching a known run, keep its filters and snapshot ID together. The first request freezes the matching events. A new query captures later events.
 
 ```powershell
-Get-NetTCPConnection -State Listen -ErrorAction SilentlyContinue |
-    Where-Object { $_.LocalPort -in 5174,8000,8001 } |
-    Select-Object LocalAddress,LocalPort,OwningProcess
+$logSet = Invoke-RestMethod "$apiBase/logs?run_id=$runId&limit=25"
+$logSet | Select-Object total,snapshot_id,coverage | ConvertTo-Json -Depth 5
+$logFile = Join-Path '.local-integration' ("logs-" + $logSet.snapshot_id + ".ndjson")
+Invoke-WebRequest -UseBasicParsing -Uri "$apiBase/logs/export?run_id=$runId&snapshot_id=$($logSet.snapshot_id)" -OutFile $logFile
 ```
 
-### Run tests and the local smoke check
+The API and worker persist structured events in the database. The API collector reads `.local-integration/ai-events.jsonl` when logs are queried. In a deployment with separate filesystems, inspect the AI service console and check the returned `coverage` field. Captured service coverage may be partial. Log queries and exports can grow the database, which currently has no automatic retention policy. [Log API contract](backend-logs-contract.md)
 
-For ordinary checks, leave `FIX_TEST_POSTGRES_URL` unset and use a fresh temporary directory:
+Run the repeatable checks from the same checkout:
 
 ```powershell
 npm test
 npm run build
-New-Item -ItemType Directory -Path .local-integration -Force | Out-Null
-$testTemp = Join-Path (Get-Location).Path ".local-integration/pytest-$([guid]::NewGuid().ToString('N'))"
-.\.venv-model\Scripts\python.exe -m pytest ai/tests ai/integration_tests integration/tests local_backend/tests -q --basetemp=$testTemp
+.\.venv-model\Scripts\python.exe -m pytest -q ai/tests ai/integration_tests integration/tests local_backend/tests scripts/tests
 ```
 
-Pytest can clear its temporary directory; never use `.local-integration` itself as `--basetemp`. PostgreSQL tests use `FIX_TEST_POSTGRES_URL` and truncate workflow tables, so provide only a dedicated disposable test database. Without it, PostgreSQL-specific testing is skipped; report that distinction.
+Use the default temporary SQLite databases for tests. Leave `FIX_TEST_POSTGRES_URL` unset unless it points to a **dedicated disposable database**. The PostgreSQL test fixture truncates workflow tables, and the PostgreSQL-specific test skips when the URL is absent. For the optional PostgreSQL runtime, the API and worker need the same `FIX_DATABASE_URL`; the worker also needs the private AI address in `FIX_AI_URL`. Startup applies numbered migrations under a database lock. Check `schema_migrations` for revisions 001 through 004 in this source version. [SQL migrations](../local_backend/migrations)
 
-After the local stack is ready and data imported:
+## 5. Failure handling
 
-```powershell
-node scripts/verify-local-demo.mjs
-```
-
-This targets `http://127.0.0.1:8000`, creates a real analysis and advisory review, checks reference predictions and unchanged inventory, validates local log pagination/export, and writes `.local-integration/verification.json`. It changes demo records. A polling timeout does not mark the server run failed; inspect that run before repeating. The starter's `tests/smoke` command is not available here.
-
-### Apply migrations and seed data
-
-API/worker startup initializes storage. PostgreSQL uses a database lock to coordinate migrations, applies missing numbered SQL files in [local_backend/migrations](../local_backend/migrations), currently **001 and 002**, and records versions in `schema_migrations`. SQLite initializes its own tables. This project does not use Alembic.
-
-Inspect PostgreSQL versions from an authorized database client:
-
-```sql
-SELECT version, applied_at FROM schema_migrations ORDER BY version;
-```
-
-Seed observations using the virtual-environment importer command under Local startup. Switching to PostgreSQL does not copy SQLite runs, reviews, or logs. Preserve existing evidence before switching; do not edit applied migrations or their recorded versions.
-
-### Inspect and export logs
-
-```powershell
-Get-Content -LiteralPath .local-integration/api-stderr.log -Tail 80
-Get-Content -LiteralPath .local-integration/worker-stderr.log -Tail 80
-Get-Content -LiteralPath .local-integration/ai-stderr.log -Tail 80
-```
-
-Also inspect matching stdout files. For a known `$runId`, with `$apiBase` set during startup:
-
-```powershell
-$encodedRun = [uri]::EscapeDataString($runId)
-$logQuery = Invoke-RestMethod "$apiBase/logs?run_id=$encodedRun&limit=100"
-$logQuery | Select-Object total, snapshot_id, coverage | ConvertTo-Json -Depth 5
-$encodedSnapshot = [uri]::EscapeDataString($logQuery.snapshot_id)
-$exportPath = Join-Path (Get-Location).Path ".local-integration/log-export-$([guid]::NewGuid().ToString('N')).ndjson"
-Invoke-WebRequest -UseBasicParsing `
-    -Uri "$apiBase/logs/export?run_id=$encodedRun&snapshot_id=$encodedSnapshot" `
-    -OutFile $exportPath
-Write-Output $exportPath
-```
-
-Export uses the same filters and `snapshot_id` and includes all matching events in that snapshot, not only the first 100. The output directory exists after local startup. Save needed evidence before a reset.
-
-## Failure handling in Project F.I.X.
-
-When the worker catches an AI/processing error and can persist the failure:
-
-- The **Run and Job** become `failed`. The Run retains an error message and the worker records a correlated error event.
-- PostgreSQL also stores the error in `jobs.error`. SQLite's job table has no error column; inspect the Run and logs.
-- Previously committed product results remain available; the Run is `partial = true` if any were saved.
-- Existing cases remain stored, but review is blocked unless the parent Run is completed and non-partial. Cases do not become `failed`, unlike the starter's case-centric example.
-
-| Problem | Response |
+| Symptom | Operator action |
 | --- | --- |
-| Service unavailable or readiness fails | Inspect process output, database connectivity, heartbeat, and private AI URL. API/worker must use the same database. |
-| Analysis rejected with 422 | Check S001, Daily mode, cutoff date, all 20 products, and 29-day histories. Do not fabricate missing observations. |
-| CSV checksum or conflict error | Verify trusted source bytes and existing records; resume with the importer without bypassing checks or overwriting conflicts. |
-| Run stays queued | Confirm the worker is running against the API's database. Pending work can be claimed when it resumes. |
-| Run stays processing after worker exit | Preserve IDs, counts, status, and logs; already claimed work is not automatically resumed. |
-| Review rejected with 409/422 | Reload case/parent Run and check state, compatible action, required note, and quantity rules. |
-| Mock data, missing assets, or CORS errors | Check runtime/API settings, base path, exact allowed origin, and HTTPS for hosted services. Rebuild after build-time setting changes. |
-| AI events missing from logs | Check filters, snapshot freshness, coverage, and filesystem sharing; inspect the AI console separately. |
+| Startup reports an occupied port or an existing demo | Check the listeners with `Get-NetTCPConnection -LocalPort 5174,8000,8001 -State Listen`. Reuse a healthy stack or stop the recorded project processes before starting again. |
+| API readiness 503 or a run stays queued | Read `.local-integration/worker-stderr.log` and `api-stderr.log`. Confirm the worker and API use the same database. A long model call can delay the heartbeat. Check the AI readiness endpoint separately. |
+| Daily request rejected with 422 | Verify the cutoff is on or after 2023-09-01 and has all 20 products. Each selected product needs 29 consecutive daily observations ending on the cutoff. Inspect `cutoff_date` and `snapshot_date` from `/snapshots/latest`. If `cutoff_date` is null, the UI can submit an incomplete date. Import the verified source data and use the historical replay in section 3. |
+| Worker or AI fails mid-analysis | Read the run's `error`, `partial` flag and correlated logs. Earlier product results can survive. A failed or partial parent run cannot accept reviews. The worker retries transient polling errors after five seconds. A crash after claim may leave `processing/claimed` without an automatic lease or replay. Confirm the original worker has stopped, restore readiness, and record the original ID before intentionally creating a new run. |
+| Submission timed out, or review returns 409/422 | Search by Request ID before resubmitting. Each new analysis POST can create a job. Reload the case and parent run before review. A completed, non-partial run and pending case are required. Check the reason, quantity and permitted action for that case. |
+| Inventory settlement is blocked | Inspect `detail` from the automation endpoint and filter worker logs for `inventory.settlement_blocked`. Verify opening stock for all products, data conflicts and private AI readiness. The worker retries the same due day. An imported full date is preserved. A date without a posted receipt can return 404 from `/sales/day`. |
+| Dashboard shows mock data or fails to reach the API | Use the local preview URL, check the public API health and exact frontend origin, and rebuild after changing `VITE_BASE_PATH`. For hosted use, verify its specific runtime API URL, CORS and health separately. |
 
-There is no automatic inference retry, lease expiry, cancellation endpoint, or stale-claim recovery. A hard stop or database outage can leave a task `processing/claimed`. Confirm the old worker is no longer executing, fix the cause, restore readiness, and deliberately create a new independent run if needed. Record old/new IDs together and keep the interrupted record. Do not manually mark it complete or requeue it without a safe recovery implementation.
+Use `Get-Content .local-integration/worker-stderr.log -Tail 80` to inspect recent worker failures. Matching stdout and stderr files exist for `api`, `worker`, `ai` and `dashboard` after a full launch. Save the relevant UTC time, code revision and IDs when handing a failure to another teammate.
 
-For a submission timeout, inspect server logs using its Request ID and identify any saved Run before resubmitting. `X-Request-ID` is correlation metadata, not an idempotency guarantee; another submission can create a duplicate. Never replace failed model output with mock predictions.
+## 6. Stop, back up and restore
 
-For handoff, capture Git/model version, database mode, UTC time window, Run/Job/Request/Trace/Case IDs, health responses, logs, and actions already taken. Zhou coordinates dashboard/API/log integration; the relevant service owner investigates backend, model, database, or deployment faults.
-
-## Resetting local state
-
-**Normal restart does not require a reset.** Reset only when a fresh demo database is intended. Preserve original records first: the fresh instance will not contain previous runs, results, reviews, or log-query snapshots.
-
-### SQLite: archive stopped state, then start fresh
-
-Stop submissions, let known tasks finish, and run `scripts/stop-local-demo.ps1`. Confirm no independently started API, worker, or AI process still accesses the state directory. Then archive the entire directory, including any SQLite WAL files and AI events:
-
-```powershell
-$ErrorActionPreference = 'Stop'
-if ($env:FIX_DATABASE_URL) { throw 'This reset procedure is for SQLite only.' }
-$repoRoot = (Resolve-Path -LiteralPath '.').Path
-if (-not (Test-Path -LiteralPath (Join-Path $repoRoot 'scripts/start-local-demo.ps1'))) {
-    throw 'Run from the Project F.I.X. repository root.'
-}
-$stateDir = Join-Path $repoRoot '.local-integration'
-$stateInfo = Get-Item -LiteralPath $stateDir
-if ($stateInfo.Attributes -band [IO.FileAttributes]::ReparsePoint) {
-    throw 'Do not reset a linked state directory with this procedure.'
-}
-$resolvedState = (Resolve-Path -LiteralPath $stateDir).Path
-if ($resolvedState -ne [IO.Path]::GetFullPath($stateDir)) { throw 'Unexpected state path.' }
-$backupRoot = [IO.Path]::GetFullPath((Join-Path (Split-Path -Parent $repoRoot) 'FIX_dashboard-backups'))
-$archiveDir = Join-Path $backupRoot ((Get-Date -Format 'yyyyMMdd-HHmmss') + '-' + [guid]::NewGuid().ToString('N'))
-if (-not ([IO.Path]::GetFullPath($archiveDir).StartsWith($backupRoot + '\'))) {
-    throw 'Archive destination is outside the backup directory.'
-}
-New-Item -ItemType Directory -Path $backupRoot -Force | Out-Null
-Move-Item -LiteralPath $resolvedState -Destination $archiveDir
-git rev-parse HEAD | Set-Content -LiteralPath (Join-Path $archiveDir 'commit.txt') -Encoding utf8
-Write-Output "Archived state: $archiveDir"
-```
-
-The unique archive is outside the repository. Keep a protected backup copy elsewhere when records matter; a same-disk archive does not protect against disk loss. Retain matching model/source artifacts and the recorded Git revision.
-
-Repeat startup/readiness checks and the CSV import. Confirm the 20-product inventory and run a controlled analysis against the new database.
-
-To restore, stop all users of the current state directory, archive it separately, and restore the selected backup into a clean `.local-integration` directory with matching code/model artifacts. Keep database, journal, and AI event files from the same backup together. Do not reuse archived `processes.json` as active process bookkeeping. Check SQLite integrity, readiness, and known saved results/reviews before use. In-progress claims retain the recovery limitations described above.
-
-### PostgreSQL
-
-For a fresh isolated demo, create a separate empty database, configure **both API and worker** with its URL, restart to apply migrations, and import observations. Preserve the old database or a verified provider/logical backup. Renaming `.local-integration` does not reset PostgreSQL; the template's `docker compose down -v --remove-orphans` command does not apply here.
-
-Restore backups into a separate database first, verify migrations and known records, then test services in isolation. Keep tests that truncate tables away from restored evidence. There is no automatic down-migration; confirm schema compatibility before rolling back code. Record actual reset/restore outcomes and limitations in the Week 07 evidence document.
+1. Allow known runs and any in-progress settlement to finish. Run `.\scripts\stop-local-demo.ps1`. It stops the recorded project processes and preserves persisted state. A subsequent scripted start replaces the redirected console logs.
+2. For a SQLite backup, stop any other process using the same database, then copy the **whole** `.local-integration` directory, including any WAL files and AI events, to a new backup directory outside the checkout. Record `git rev-parse HEAD` with the copy. Keep the matching model and source CSV revision.
+3. For a normal restart, use the original directory and repeat the startup and health checks. For a clean demonstration, use a fresh checkout and import the historical CSV. To restore an archive, stop the stack, preserve the current directory separately, copy the backup back as `.local-integration`, restart, and read back the saved run, inventory date and review.
+4. When using PostgreSQL, back up and restore the database with its provider tools or PostgreSQL dump/restore tooling. Test restored rows and migration versions in a separate database before switching the API and worker. Each environment also needs its AI log capture if those logs are part of the evidence.
