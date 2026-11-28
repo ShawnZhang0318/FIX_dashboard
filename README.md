@@ -151,6 +151,16 @@ Both requests should succeed. The API readiness check also requires a current wo
 
 ### 3. Import the data
 
+Choose one dataset per local database. For the **November 28 demo**, start the services in a fresh checkout with an empty local database, then import the demo snapshots.
+
+```powershell
+.\.venv-model\Scripts\python.exe -m local_backend.import_csv --calendar-replay
+```
+
+The [demo dataset](data/demo/s001-calendar-2026-11-28.json.gz) contains **14,640 snapshots** for 20 products on 732 consecutive dates, from **2024-11-27 through 2026-11-28**. The original 2026-11-25 simulation appears on November 28 and the original 2024-01-01 data on November 27. Each earlier recorded day moves back one more day. Quantities are preserved and every snapshot is labelled as simulated, with its original date and source in `source_reference`. A fresh import gives a Daily analysis cutoff of **2026-11-28**.
+
+For the **historical dataset** used by the Week 07 and Week 13 fixed-date acceptance script, import the original CSV into a separate local database.
+
 ```powershell
 .\.venv-model\Scripts\python.exe -m local_backend.import_csv
 ```

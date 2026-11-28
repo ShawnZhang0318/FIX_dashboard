@@ -2,6 +2,7 @@
 import argparse
 from concurrent.futures import ThreadPoolExecutor, as_completed
 import csv
+import gzip
 import hashlib
 import json
 from pathlib import Path
@@ -9,6 +10,9 @@ import sys
 import httpx
 
 ROOT = Path(__file__).resolve().parents[1]
+REPLAY_FILE = ROOT / "data/demo/s001-calendar-2026-11-28.json.gz"
+REPLAY_SHA256 = "a95e27839147ba8ea9ad0ae11a968b4f98b1b7f9ade8bf26d08fa60443eb1746"
+REPLAY_SOURCE_PREFIX = "historical_simulation/calendar-replay/"
 
 
 def source_rows(path):
@@ -38,6 +42,8 @@ def source_rows(path):
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--api", default="http://127.0.0.1:8000")
+    parser.add_argument("--calendar-replay", action="store_true",
+                        help="import the S001 demo calendar ending 2026-11-28 into a separate database")
     parser.add_argument("--concurrency", type=int, default=1)
     parser.add_argument("--timeout", type=float, default=300)
     args = parser.parse_args()
@@ -45,11 +51,29 @@ def main():
         parser.error("--concurrency must be at least 1")
     if args.timeout <= 0:
         parser.error("--timeout must be positive")
-    digest, rows = source_rows(ROOT/"data/raw/retail_store_inventory_data.csv")
+    if args.calendar_replay:
+        with gzip.open(REPLAY_FILE, "rb") as source:
+            payload = source.read()
+        digest = hashlib.sha256(payload).hexdigest()
+        if digest != REPLAY_SHA256:
+            parser.exit(1, "Calendar replay checksum mismatch. Restore the dataset from the repository.\n")
+        rows = json.loads(payload)
+    else:
+        digest, rows = source_rows(ROOT/"data/raw/retail_store_inventory_data.csv")
     with httpx.Client(base_url=args.api, timeout=args.timeout, trust_env=False) as client:
         response = client.get("/snapshots", params={"store_id": "S001"})
         response.raise_for_status()
         existing = {(x["product_id"], x["snapshot_date"]): x for x in response.json()}
+        has_replay = any(x["source_reference"].startswith(REPLAY_SOURCE_PREFIX) for x in existing.values())
+        if args.calendar_replay:
+            # Allow retries after a partial import and after later nightly settlements.
+            if existing and (not has_replay or any(
+                x["source_file_sha256"] != digest and x["snapshot_date"] <= rows[-1]["snapshot_date"]
+                for x in existing.values()
+            )):
+                parser.exit(1, "Use an empty database or the existing November 28 demo calendar.\n")
+        elif has_replay:
+            parser.exit(1, "This database contains the demo calendar. Import historical data in a separate database.\n")
         pending = []
         for row in rows:
             old = existing.get((row["product_id"], row["snapshot_date"]))
